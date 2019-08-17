@@ -30,7 +30,6 @@ require (
 	github.com/jpillora/go-tld v0.0.0-20190202073305-f16ca3b7b383 // indirect
 	github.com/konsorten/go-windows-terminal-sequences v1.0.2 // indirect
 	github.com/kr/binarydist v0.1.0 // indirect
-	github.com/kr/pretty v0.1.0 // indirect
 	github.com/malfunkt/iprange v0.9.0 // indirect
 	github.com/mattn/go-colorable v0.1.2 // indirect
 	github.com/mattn/go-isatty v0.0.9 // indirect
@@ -46,7 +45,6 @@ require (
 	github.com/tarm/serial v0.0.0-20180830185346-98f6abe2eb07 // indirect
 	golang.org/x/crypto v0.0.0-20190701094942-4def268fd1a4 // indirect
 	golang.org/x/net v0.0.0-20190813141303-74dc4d7220e7 // indirect
-	golang.org/x/sync v0.0.0-20190423024810-112230192c58 // indirect
-	gopkg.in/check.v1 v1.0.0-20180628173108-788fd7840127 // indirect
 	gopkg.in/sourcemap.v1 v1.0.5 // indirect
+	honnef.co/go/tools v0.0.1-2019.2.2 // indirect
 )
