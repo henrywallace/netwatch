@@ -8,15 +8,7 @@ import (
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 	"github.com/sirupsen/logrus"
-	log "github.com/sirupsen/logrus"
 )
-
-func init() {
-	customFormatter := new(logrus.TextFormatter)
-	customFormatter.TimestampFormat = "2006-01-02 15:04:05"
-	customFormatter.FullTimestamp = true
-	logrus.SetFormatter(customFormatter)
-}
 
 // Host is a tracked entity.
 type Host struct {
@@ -130,12 +122,11 @@ type ViewPair struct {
 // events to a channel based on their updated activity, when applicable.
 //
 // A map of hosts known will be updated with the diffs.
-func ScanPackets(
-	events chan<- Event,
+func (w *Watcher) ScanPackets(
 	hosts map[MAC]*Host,
 	packets <-chan gopacket.Packet,
 ) {
-	defer close(events)
+	defer close(w.events)
 
 	var avail availLayers
 	parser := gopacket.NewDecodingLayerParser(
@@ -162,7 +153,7 @@ func ScanPackets(
 			p.Data(),
 			&decodedLayers,
 		); err != nil {
-			log.WithError(err).Debug("failed to decode packet")
+			w.log.WithError(err).Debug("failed to decode packet")
 			continue
 		}
 		var v View
@@ -180,7 +171,7 @@ func ScanPackets(
 			case layers.LayerTypeDNS:
 				handleDNS(&v, avail.dns)
 			case layers.LayerTypeARP:
-				handleARP(&v, avail.arp)
+				handleARP(w.log, &v, avail.arp)
 			case layers.LayerTypePFLog:
 			case layers.LayerTypeLoopback:
 			case layers.LayerTypeDot11InformationElement:
@@ -188,10 +179,10 @@ func ScanPackets(
 			case layers.LayerTypeTLS:
 			case layers.LayerTypeDHCPv4:
 			default:
-				log.Debugf("unhanded layer type: %#v", ty)
+				w.log.Debugf("unhanded layer type: %#v", ty)
 			}
 		}
-		updateHosts(events, &v, hosts)
+		updateHosts(w.events, &v, hosts)
 	}
 }
 
@@ -298,6 +289,7 @@ func handleDNS(
 }
 
 func handleARP(
+	log *logrus.Logger,
 	v *View,
 	arp layers.ARP,
 ) {

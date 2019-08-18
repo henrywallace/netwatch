@@ -18,8 +18,9 @@ var rootCmd = &cobra.Command{
 
 func main(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
+	log := NewLogger()
 
-	return watch.NewWatcher().Watch(ctx)
+	return watch.NewWatcher(log).Watch(ctx)
 }
 
 // Execute adds all child commands to the root command and sets flags
