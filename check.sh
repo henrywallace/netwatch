@@ -1,5 +1,7 @@
 #!/bin/sh
 
+set -ex
+
 go install ./...
 go mod tidy
 

@@ -1,5 +1,7 @@
 package watch
 
+import "time"
+
 type EventKind int
 
 const (
@@ -16,13 +18,15 @@ type Event struct {
 }
 
 type EventHostNew struct {
-	Host Host
+	Host *Host
 }
 
 type EventHostReturn struct {
-	Diff Diff
+	Down time.Duration
+	Host *Host
 }
 
 type EventHostDrop struct {
-	Host Host
+	Up   time.Duration
+	Host *Host
 }

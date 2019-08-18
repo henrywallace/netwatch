@@ -2,6 +2,7 @@ package watch
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"time"
 
@@ -11,7 +12,7 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-var defaultTTL = 4000 * time.Millisecond
+var defaultTTL = 1 * time.Minute
 
 func init() {
 	customFormatter := new(logrus.TextFormatter)
@@ -31,71 +32,34 @@ func NewWatcher() *Watcher {
 }
 
 func (w *Watcher) Watch(ctx context.Context) error {
-	diffs, err := w.Scan(ctx)
-	if err != nil {
-		return err
-	}
-	w.Respond(diffs)
-	return nil
-}
-
-func (w *Watcher) Scan(ctx context.Context) (<-chan Diff, error) {
 	iface := os.Getenv("IFACE")
 	if iface == "" {
 		log.Fatal("must provide env IFACE")
 	}
 	h, err := pcap.OpenLive(iface, 1600, true, pcap.BlockForever)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	src := gopacket.NewPacketSource(h, h.LinkType())
-	diffs := make(chan Diff, 32)
-	hosts := make(map[MAC]Host)
-	go func() {
-		defer close(diffs)
-		DiffPackets(w.events, diffs, hosts, src.Packets())
-	}()
-	return diffs, nil
+	hosts := make(map[MAC]*Host)
+	go ScanPackets(w.events, hosts, src.Packets())
+	return w.Respond()
 }
 
-func (w *Watcher) Respond(diffs <-chan Diff) error {
-	go func() {
-		defer close(w.events)
-		for diff := range diffs {
-			if diff.New {
-				w.events <- Event{
-					Kind: HostNew,
-					Body: EventHostNew{diff.B},
-				}
-				continue
-			} else if diff.B.LastSeen.Sub(diff.A.LastSeen) > defaultTTL {
-				w.events <- Event{
-					Kind: HostReturn,
-					Body: EventHostReturn{diff},
-				}
-			}
-		}
-	}()
-	for event := range w.events {
-		switch event.Kind {
+func (w *Watcher) Respond() error {
+	for e := range w.events {
+		switch e.Kind {
 		case HostNew:
-			e := event.Body.(EventHostNew)
-			log.Infof("new host %s", e.Host)
+			e := e.Body.(EventHostNew)
+			log.Infof("new host: %s", e.Host)
 		case HostDrop:
-			e := event.Body.(EventHostDrop)
-			log.Infof(
-				"drop host (up %v) %s",
-				time.Since(e.Host.FirstSeen),
-				e,
-			)
+			e := e.Body.(EventHostDrop)
+			log.Infof("drop host (up %s): %s", e.Up, e.Host)
 		case HostReturn:
-			e := event.Body.(EventHostReturn)
-			log.Infof(
-				"return host (down %v) (since %v) %s",
-				time.Since(e.Diff.A.LastSeen),
-				e.Diff.B.FirstSeen.Format("2006-01-02"),
-				e.Diff.B,
-			)
+			e := e.Body.(EventHostReturn)
+			log.Infof("return host (down %s): %s", e.Down, e.Host)
+		default:
+			panic(fmt.Sprintf("unhandled event kind: %#v", e))
 		}
 	}
 	return nil
