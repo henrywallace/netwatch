@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -20,13 +19,7 @@ var rootCmd = &cobra.Command{
 func main(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 
-	sess, err := watch.StartSession()
-	if err != nil {
-		log.Fatalf("failed to start session: %v", err)
-	}
-	defer sess.Close()
-
-	return watch.NewWatcher(sess).Watch(ctx)
+	return watch.NewWatcher().Watch(ctx)
 }
 
 // Execute adds all child commands to the root command and sets flags

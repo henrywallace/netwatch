@@ -16,13 +16,13 @@ type Event struct {
 }
 
 type EventHostNew struct {
-	TrackedEndpoint
+	Host Host
 }
 
 type EventHostReturn struct {
-	TrackedEndpoint
+	Diff Diff
 }
 
 type EventHostDrop struct {
-	TrackedEndpoint
+	Host Host
 }
