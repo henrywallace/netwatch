@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/henrywallace/homelab/go/netwatch/util"
 	"github.com/henrywallace/homelab/go/netwatch/watch"
 )
 
@@ -18,7 +19,7 @@ var rootCmd = &cobra.Command{
 
 func main(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
-	log := NewLogger()
+	log := util.NewLogger()
 
 	return watch.NewWatcher(log).Watch(ctx)
 }

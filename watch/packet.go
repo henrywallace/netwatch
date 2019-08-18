@@ -7,7 +7,7 @@ import (
 
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
-	"github.com/sirupsen/logrus"
+	"github.com/henrywallace/homelab/go/netwatch/util"
 )
 
 // Host is a tracked entity.
@@ -46,7 +46,7 @@ func NewHost(
 		FirstSeenEpisode: now,
 		LastSeen:         now,
 	}
-	h.expire = time.AfterFunc(defaultTTL, func() {
+	h.expire = time.AfterFunc(ttlHost, func() {
 		h.Active = false
 		expire(&h)
 	})
@@ -61,7 +61,7 @@ func (h *Host) Touch() {
 	}
 	h.Active = true
 	h.LastSeen = now
-	h.expire.Reset(defaultTTL)
+	h.expire.Reset(ttlHost)
 }
 
 // MAC is a string form of a net.HardwareAddr, so as to be used as keys in
@@ -147,7 +147,7 @@ func (w *Watcher) ScanPackets(
 		&avail.dhcp4,
 		&avail.payload,
 	)
-	decodedLayers := make([]gopacket.LayerType, 0, 10)
+	decodedLayers := make([]gopacket.LayerType, 0, 32)
 	for p := range packets {
 		if err := parser.DecodeLayers(
 			p.Data(),
@@ -156,7 +156,7 @@ func (w *Watcher) ScanPackets(
 			w.log.WithError(err).Debug("failed to decode packet")
 			continue
 		}
-		var v View
+		var v ViewPair
 		for _, ty := range decodedLayers {
 			switch ty {
 			case layers.LayerTypeEthernet:
@@ -164,25 +164,22 @@ func (w *Watcher) ScanPackets(
 			case layers.LayerTypeTCP:
 				handleTCP(&v, avail.tcp)
 			case layers.LayerTypeLCM:
+				handleLCM(&v, avail.lcm)
 			case layers.LayerTypeIPv4:
-				handleIP(&v, avail.ip4)
+				handleIPv4(&v, avail.ip4)
 			case layers.LayerTypeIPv6:
+				handleIPv6(&v, avail.ip6)
 			case layers.LayerTypeUDP:
+				handleUDP(&v, avail.udp)
 			case layers.LayerTypeDNS:
 				handleDNS(&v, avail.dns)
 			case layers.LayerTypeARP:
-				handleARP(w.log, &v, avail.arp)
-			case layers.LayerTypePFLog:
-			case layers.LayerTypeLoopback:
-			case layers.LayerTypeDot11InformationElement:
-			case layers.LayerTypeLLC:
-			case layers.LayerTypeTLS:
-			case layers.LayerTypeDHCPv4:
+				handleARP(&v, avail.arp)
 			default:
-				w.log.Debugf("unhanded layer type: %#v", ty)
+				w.log.Debugf("unhandled layer type: %v", ty)
 			}
 		}
-		updateHosts(w.events, &v, hosts)
+		w.updateHosts(v, hosts)
 	}
 }
 
@@ -193,16 +190,26 @@ func (w *Watcher) ScanPackets(
 // a non-empty Curr.
 var InvalidHost = Host{}
 
-func updateHosts(
-	events chan<- Event,
-	v *View,
+func (w *Watcher) updateHosts(
+	v ViewPair,
 	hosts map[MAC]*Host,
-) bool {
+) {
+	w.updateHostWithView(v.Src, hosts)
+	// TODO: There are some bugs here with the double updating, with
+	// duplicate new hosts being detected.
+	//
+	// w.updateHostWithView(v.Dst, hosts)
+}
+
+func (w *Watcher) updateHostWithView(
+	v View,
+	hosts map[MAC]*Host,
+) {
 	// TODO: Relieve this handicap, which is an artifact of the hosts
 	// map[MAC]*Host datastructure, which should be made more
 	// relational.
 	if v.MAC == nil {
-		return false
+		return
 	}
 
 	prev := findHost(v, hosts)
@@ -210,98 +217,105 @@ func updateHosts(
 	if prev == nil {
 		curr = NewHost(*v.MAC, func(h *Host) {
 			up := time.Since(h.FirstSeenEpisode)
-			events <- Event{
+			w.events <- Event{
 				Kind: HostDrop,
 				Body: EventHostDrop{up, h},
 			}
 		})
 		hosts[*v.MAC] = curr
-		events <- Event{
+		w.events <- Event{
 			Kind: HostNew,
 			Body: EventHostNew{curr},
 		}
 	} else {
-		if time.Since(prev.LastSeen) > defaultTTL {
+		if time.Since(prev.LastSeen) > ttlHost {
 			down := time.Since(prev.LastSeen)
-			events <- Event{
+			w.events <- Event{
 				Kind: HostReturn,
 				Body: EventHostReturn{down, prev},
 			}
 		}
 		curr = prev
 		curr.Touch()
+		w.log.Debugf("touch host %s", curr)
 	}
 
 	// TODO: Display differences, which may be a job for
 	// findHost.
-	if v.IPv4 != nil {
+	if v.IPv4 != nil && !v.IPv4.Equal(net.IPv4zero) {
+		if !curr.IPv4.Equal(v.IPv4) {
+			w.log.Debugf("host %s changed ips %s -> %s", curr, curr.IPv4, v.IPv4)
+		}
 		curr.IPv4 = v.IPv4
 	}
-	if v.IPv6 != nil {
+	if v.IPv6 != nil && !v.IPv6.Equal(net.IPv6zero) {
+		if !curr.IPv6.Equal(v.IPv6) {
+			w.log.Debugf("host %s changed ips %s -> %s", curr, curr.IPv6, v.IPv6)
+		}
 		curr.IPv6 = v.IPv6
 	}
-
-	return true
 }
 
 // findHost tries to find a host associated with the given view.
 //
 // TODO: Use more sophisticated host association techniques, such as using
 // previously seen ip address.
-func findHost(
-	v *View,
-	hosts map[MAC]*Host,
-) *Host {
+func findHost(v View, hosts map[MAC]*Host) *Host {
 	if v.MAC == nil {
 		return nil
 	}
 	return hosts[*v.MAC]
 }
 
-func handleEthernet(
-	v *View,
-	eth layers.Ethernet,
-) {
+func handleEthernet(v *ViewPair, eth layers.Ethernet) {
 	mac := MAC(eth.SrcMAC.String())
-	v.MAC = &mac
+	v.Src.MAC = &mac
+}
+
+func handleTCP(v *ViewPair, tcp layers.TCP) {
+	v.Src.Port = int(tcp.SrcPort)
+	v.Dst.Port = int(tcp.DstPort)
+}
+
+func handleLCM(v *ViewPair, lcm layers.LCM) {
+}
+
+func handleIPv4(v *ViewPair, ip4 layers.IPv4) {
+	v.Src.IPv4 = ip4.SrcIP
+	v.Dst.IPv4 = ip4.DstIP
+}
+
+func handleIPv6(v *ViewPair, ip6 layers.IPv6) {
+	v.Src.IPv6 = ip6.SrcIP
+	v.Dst.IPv6 = ip6.DstIP
+}
+
+func handleUDP(v *ViewPair, udp layers.UDP) {
+	v.Src.Port = int(udp.SrcPort)
+	v.Dst.Port = int(udp.DstPort)
+}
+
+func handleDNS(v *ViewPair, dns layers.DNS) {
 	// spew.Dump(dns)
 }
 
-func handleTCP(
-	v *View,
-	tcp layers.TCP,
-) {
-	v.Port = int(tcp.SrcPort)
-}
-
-func handleIP(
-	v *View,
-	ipv4 layers.IPv4,
-) {
-	v.IPv4 = ipv4.SrcIP
-}
-
-func handleDNS(
-	v *View,
-	dns layers.DNS,
-) {
-	// spew.Dump(dns)
-}
-
-func handleARP(
-	log *logrus.Logger,
-	v *View,
-	arp layers.ARP,
-) {
+func handleARP(v *ViewPair, arp layers.ARP) {
 	// TODO: Check for change.
-	mac := MAC(net.HardwareAddr(arp.SourceHwAddress).String())
-	v.MAC = &mac
-	ip := net.IP(arp.SourceProtAddress)
+	srcMAC := MAC(net.HardwareAddr(arp.SourceHwAddress).String())
+	dstMAC := MAC(net.HardwareAddr(arp.DstHwAddress).String())
+	v.Src.MAC = &srcMAC
+	v.Dst.MAC = &dstMAC
+
+	addIP(&v.Src, net.IP(arp.SourceProtAddress))
+	addIP(&v.Dst, net.IP(arp.DstProtAddress))
+}
+
+func addIP(v *View, ip net.IP) {
 	if len(ip) == net.IPv4len {
 		v.IPv4 = ip
 	} else if len(ip) == net.IPv6len {
 		v.IPv6 = ip
 	} else {
-		log.Warnf("invalid ip len=%d: %#v", len(ip), ip)
+		util.NewLogger().Warnf("invalid ip len=%d: %#v", len(ip), ip)
 	}
 }

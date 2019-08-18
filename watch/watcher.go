@@ -11,7 +11,9 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-var defaultTTL = 1 * time.Minute
+var (
+	ttlHost = 60 * time.Second
+)
 
 type Watcher struct {
 	log    *logrus.Logger
@@ -45,13 +47,13 @@ func (w *Watcher) Respond() error {
 		switch e.Kind {
 		case HostNew:
 			e := e.Body.(EventHostNew)
-			w.log.Infof("new host: %s", e.Host)
+			w.log.Infof("new %s", e.Host)
 		case HostDrop:
 			e := e.Body.(EventHostDrop)
-			w.log.Infof("drop host (up %s): %s", e.Up, e.Host)
+			w.log.Infof("drop (up %s): %s", e.Up, e.Host)
 		case HostReturn:
 			e := e.Body.(EventHostReturn)
-			w.log.Infof("return host (down %s): %s", e.Down, e.Host)
+			w.log.Infof("return (down %s): %s", e.Down, e.Host)
 		default:
 			panic(fmt.Sprintf("unhandled event kind: %#v", e))
 		}
