@@ -389,7 +389,7 @@ func (w *Watcher) updatePortsWithView(h *Host, v View) {
 				// last seen.
 				down := time.Since(prev.LastSeen) - ttlPort
 				w.events <- Event{
-					Kind: HostReturn,
+					Kind: PortReturn,
 					Body: EventPortReturn{prev, down, h},
 				}
 			}
