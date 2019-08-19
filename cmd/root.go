@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
 	"github.com/henrywallace/homelab/go/netwatch/util"
@@ -17,11 +18,25 @@ var rootCmd = &cobra.Command{
 	RunE:  main,
 }
 
+func init() {
+	rootCmd.Flags().StringP("config", "c", "config.toml", "toml file to exec config")
+}
+
 func main(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 	log := util.NewLogger()
 
-	return watch.NewWatcher(log).Watch(ctx)
+	var subs []watch.Subscriber
+	path := mustString(log, cmd, "config")
+	if path != "" {
+		sub, err := watch.SubConfig(log, path)
+		if err != nil {
+			return err
+		}
+		subs = append(subs, sub)
+	}
+
+	return watch.NewWatcher(log, subs...).Watch(ctx)
 }
 
 // Execute adds all child commands to the root command and sets flags
@@ -32,4 +47,16 @@ func Execute() {
 		fmt.Println(err)
 		os.Exit(1)
 	}
+}
+
+func mustString(
+	log *logrus.Logger,
+	cmd *cobra.Command,
+	name string,
+) string {
+	val, err := cmd.Flags().GetString(name)
+	if err != nil {
+		log.Fatal(err)
+	}
+	return val
 }

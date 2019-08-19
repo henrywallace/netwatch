@@ -1,0 +1,4 @@
+[subs]
+  [subs.log]
+    onAny = true
+    do = "log"
