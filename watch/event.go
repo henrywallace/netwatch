@@ -9,13 +9,14 @@ type EventType int
 
 const (
 	Invalid EventType = iota
+	HostTouch
 	HostNew
 	HostLost
 	HostFound
+	PortTouch
 	PortNew
 	PortLost
 	PortFound
-	// TODO: Add simple touch events.
 )
 
 func (ty EventType) MarshalText() ([]byte, error) {
@@ -23,12 +24,16 @@ func (ty EventType) MarshalText() ([]byte, error) {
 	switch ty {
 	case Invalid:
 		s = "invalid"
+	case HostTouch:
+		s = "host.touch"
 	case HostNew:
 		s = "host.new"
 	case HostLost:
 		s = "host.lost"
 	case HostFound:
 		s = "host.found"
+	case PortTouch:
+		s = "port.touch"
 	case PortNew:
 		s = "port.new"
 	case PortLost:
@@ -46,12 +51,16 @@ func (ty *EventType) UnmarshalText(text []byte) error {
 	switch s {
 	case "", "invalid":
 		*ty = Invalid
+	case "host.touch":
+		*ty = HostTouch
 	case "host.new":
 		*ty = HostNew
 	case "host.lost":
 		*ty = HostLost
 	case "host.found":
 		*ty = HostFound
+	case "port.touch":
+		*ty = PortTouch
 	case "port.new":
 		*ty = PortNew
 	case "port.lost":
@@ -69,6 +78,16 @@ type Event struct {
 	Body interface{}
 }
 
+//
+// host
+//
+
+type EventHostTouch struct {
+	Host *Host
+	// TODO: Add an id or number indicating which number this is, or some
+	// other stats. Might be useful for other event bodies as well.
+}
+
 type EventHostNew struct {
 	Host *Host
 }
@@ -81,6 +100,15 @@ type EventHostFound struct {
 type EventHostLost struct {
 	Host *Host
 	Up   time.Duration
+}
+
+//
+// port
+//
+
+type EventPortTouch struct {
+	Port *Port
+	Host *Host
 }
 
 type EventPortNew struct {

@@ -66,6 +66,9 @@ func (w *Watcher) Publish() error {
 func SubLogger(log *logrus.Logger) Subscriber {
 	return func(e Event) error {
 		switch e.Type {
+		case HostTouch:
+			e := e.Body.(EventHostTouch)
+			log.Infof("touch %s", e.Host)
 		case HostNew:
 			e := e.Body.(EventHostNew)
 			log.Infof("new %s", e.Host)
@@ -75,6 +78,9 @@ func SubLogger(log *logrus.Logger) Subscriber {
 		case HostFound:
 			e := e.Body.(EventHostFound)
 			log.Infof("return %s (down %s)", e.Host, e.Down)
+		case PortTouch:
+			e := e.Body.(EventPortTouch)
+			log.Infof("touch %s on %s", e.Port, e.Host)
 		case PortNew:
 			e := e.Body.(EventPortNew)
 			log.Infof("new %s on %s", e.Port, e.Host)

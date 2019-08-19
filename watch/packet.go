@@ -344,6 +344,10 @@ func (w *Watcher) updateHostWithView(
 		curr = prev
 		curr.Touch()
 		w.log.Debugf("touch host %s", curr)
+		w.events <- Event{
+			Type: HostTouch,
+			Body: EventHostTouch{curr},
+		}
 	}
 
 	// TODO: Display differences, which may be a job for
@@ -428,6 +432,10 @@ func (w *Watcher) updatePortsWithView(h *Host, v View) {
 			curr = prev
 			curr.Touch()
 			w.log.Debugf("touch host %s", curr)
+			w.events <- Event{
+				Type: PortTouch,
+				Body: EventPortTouch{curr, h},
+			}
 		}
 
 	}
