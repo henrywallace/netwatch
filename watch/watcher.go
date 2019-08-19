@@ -12,7 +12,8 @@ import (
 )
 
 var (
-	ttlHost = 60 * time.Second
+	ttlHost = 120 * time.Second
+	ttlPort = 30 * time.Second
 )
 
 type Watcher struct {
@@ -50,10 +51,19 @@ func (w *Watcher) Respond() error {
 			w.log.Infof("new %s", e.Host)
 		case HostDrop:
 			e := e.Body.(EventHostDrop)
-			w.log.Infof("drop (up %s): %s", e.Up, e.Host)
+			w.log.Infof("drop %s (up %s)", e.Host, e.Up)
 		case HostReturn:
 			e := e.Body.(EventHostReturn)
-			w.log.Infof("return (down %s): %s", e.Down, e.Host)
+			w.log.Infof("return %s (down %s)", e.Host, e.Down)
+		case PortNew:
+			e := e.Body.(EventPortNew)
+			w.log.Infof("new %s on %s", e.Port, e.Host)
+		case PortDrop:
+			e := e.Body.(EventPortDrop)
+			w.log.Infof("drop %s (up %s) on %s", e.Port, e.Up, e.Host)
+		case PortReturn:
+			e := e.Body.(EventPortReturn)
+			w.log.Infof("return %s (down %s) on %s", e.Port, e.Down, e.Host)
 		default:
 			panic(fmt.Sprintf("unhandled event kind: %#v", e))
 		}

@@ -22,6 +22,9 @@ type Host struct {
 	IPv6 net.IP
 
 	expire *time.Timer
+
+	TCP map[int]*Port
+	UDP map[int]*Port
 }
 
 func (h Host) String() string {
@@ -45,6 +48,8 @@ func NewHost(
 		FirstSeen:        now,
 		FirstSeenEpisode: now,
 		LastSeen:         now,
+		TCP:              make(map[int]*Port),
+		UDP:              make(map[int]*Port),
 	}
 	h.expire = time.AfterFunc(ttlHost, func() {
 		h.Active = false
@@ -62,6 +67,99 @@ func (h *Host) Touch() {
 	h.Active = true
 	h.LastSeen = now
 	h.expire.Reset(ttlHost)
+}
+
+func (h Host) ActiveTCP() []*Port {
+	var active []*Port
+	for _, p := range h.TCP {
+		if p.Active {
+			active = append(active, p)
+		}
+	}
+	return active
+}
+
+func (h Host) ActiveUDP() []*Port {
+	var active []*Port
+	for _, p := range h.UDP {
+		if p.Active {
+			active = append(active, p)
+		}
+	}
+	return active
+}
+
+type Port struct {
+	Active           bool
+	FirstSeen        time.Time
+	FirstSeenEpisode time.Time
+	LastSeen         time.Time
+
+	expire *time.Timer
+
+	Num   int
+	isTCP bool
+}
+
+// Touch updates the last seen time of this Host.
+func (p *Port) Touch() {
+	now := time.Now()
+	if !p.Active {
+		p.FirstSeenEpisode = now
+	}
+	p.Active = true
+	p.LastSeen = now
+	p.expire.Reset(ttlHost)
+}
+
+func NewPortTCP(
+	num int,
+	expire func(p *Port),
+) *Port {
+	now := time.Now()
+	p := Port{
+		FirstSeen:        now,
+		FirstSeenEpisode: now,
+		LastSeen:         now,
+		Num:              num,
+		isTCP:            true,
+	}
+	p.expire = time.AfterFunc(ttlPort, func() {
+		p.Active = false
+		expire(&p)
+	})
+	return &p
+}
+
+func NewPortUDP(
+	num int,
+	expire func(p *Port),
+) *Port {
+	now := time.Now()
+	p := Port{
+		FirstSeen:        now,
+		FirstSeenEpisode: now,
+		LastSeen:         now,
+		Num:              num,
+		isTCP:            false,
+	}
+	p.expire = time.AfterFunc(ttlHost, func() {
+		p.Active = false
+		expire(&p)
+	})
+	return &p
+}
+
+func (p Port) String() string {
+	var suffix string
+	if p.isTCP {
+		suffix = "tcp"
+	} else {
+		suffix = "udp"
+	}
+
+	return fmt.Sprintf("%d/%s", p.Num, suffix)
+
 }
 
 // MAC is a string form of a net.HardwareAddr, so as to be used as keys in
@@ -108,7 +206,15 @@ type View struct {
 	MAC  *MAC
 	IPv4 net.IP
 	IPv6 net.IP
-	Port int
+	TCP  map[int]bool
+	UDP  map[int]bool
+}
+
+func NewView() View {
+	return View{
+		TCP: make(map[int]bool),
+		UDP: make(map[int]bool),
+	}
 }
 
 // ViewPair represents a pair of views that are communicating withing one
@@ -156,7 +262,7 @@ func (w *Watcher) ScanPackets(
 			w.log.WithError(err).Debug("failed to decode packet")
 			continue
 		}
-		var v ViewPair
+		v := ViewPair{Src: NewView(), Dst: NewView()}
 		for _, ty := range decodedLayers {
 			switch ty {
 			case layers.LayerTypeEthernet:
@@ -194,7 +300,7 @@ func (w *Watcher) updateHosts(
 	v ViewPair,
 	hosts map[MAC]*Host,
 ) {
-	w.updateHostWithView(v.Src, hosts)
+	w.updateHostWithView(hosts, v.Src)
 	// TODO: There are some bugs here with the double updating, with
 	// duplicate new hosts being detected.
 	//
@@ -202,8 +308,8 @@ func (w *Watcher) updateHosts(
 }
 
 func (w *Watcher) updateHostWithView(
-	v View,
 	hosts map[MAC]*Host,
+	v View,
 ) {
 	// TODO: Relieve this handicap, which is an artifact of the hosts
 	// map[MAC]*Host datastructure, which should be made more
@@ -219,7 +325,7 @@ func (w *Watcher) updateHostWithView(
 			up := time.Since(h.FirstSeenEpisode)
 			w.events <- Event{
 				Kind: HostDrop,
-				Body: EventHostDrop{up, h},
+				Body: EventHostDrop{h, up},
 			}
 		})
 		hosts[*v.MAC] = curr
@@ -232,7 +338,7 @@ func (w *Watcher) updateHostWithView(
 			down := time.Since(prev.LastSeen)
 			w.events <- Event{
 				Kind: HostReturn,
-				Body: EventHostReturn{down, prev},
+				Body: EventHostReturn{prev, down},
 			}
 		}
 		curr = prev
@@ -254,6 +360,72 @@ func (w *Watcher) updateHostWithView(
 		}
 		curr.IPv6 = v.IPv6
 	}
+
+	w.updatePortsWithView(curr, v)
+}
+
+// TODO: Only update dst ports whenever the dst host is active.
+func (w *Watcher) updatePortsWithView(h *Host, v View) {
+	for num := range v.TCP {
+		prev, ok := h.TCP[num]
+		var curr *Port
+		if !ok {
+			curr = NewPortTCP(num, func(p *Port) {
+				up := time.Since(p.FirstSeenEpisode)
+				w.events <- Event{
+					Kind: PortDrop,
+					Body: EventPortDrop{p, up, h},
+				}
+			})
+			h.TCP[num] = curr
+			w.events <- Event{
+				Kind: PortNew,
+				Body: EventPortNew{curr, h},
+			}
+		} else {
+			if time.Since(prev.LastSeen) > ttlHost {
+				down := time.Since(prev.LastSeen)
+				w.events <- Event{
+					Kind: HostReturn,
+					Body: EventPortReturn{prev, down, h},
+				}
+			}
+			curr = prev
+			curr.Touch()
+			w.log.Debugf("touch host %s", curr)
+		}
+
+	}
+	for num := range v.UDP {
+		prev, ok := h.UDP[num]
+		var curr *Port
+		if !ok {
+			curr = NewPortUDP(num, func(p *Port) {
+				up := time.Since(p.FirstSeenEpisode)
+				w.events <- Event{
+					Kind: PortDrop,
+					Body: EventPortDrop{p, up, h},
+				}
+			})
+			h.UDP[num] = curr
+			w.events <- Event{
+				Kind: PortNew,
+				Body: EventPortNew{curr, h},
+			}
+		} else {
+			if time.Since(prev.LastSeen) > ttlHost {
+				down := time.Since(prev.LastSeen)
+				w.events <- Event{
+					Kind: PortReturn,
+					Body: EventPortReturn{prev, down, h},
+				}
+			}
+			curr = prev
+			curr.Touch()
+			w.log.Debugf("touch host %s", curr)
+		}
+
+	}
 }
 
 // findHost tries to find a host associated with the given view.
@@ -273,8 +445,8 @@ func handleEthernet(v *ViewPair, eth layers.Ethernet) {
 }
 
 func handleTCP(v *ViewPair, tcp layers.TCP) {
-	v.Src.Port = int(tcp.SrcPort)
-	v.Dst.Port = int(tcp.DstPort)
+	v.Src.TCP[int(tcp.SrcPort)] = true
+	v.Dst.TCP[int(tcp.DstPort)] = true
 }
 
 func handleLCM(v *ViewPair, lcm layers.LCM) {
@@ -291,8 +463,8 @@ func handleIPv6(v *ViewPair, ip6 layers.IPv6) {
 }
 
 func handleUDP(v *ViewPair, udp layers.UDP) {
-	v.Src.Port = int(udp.SrcPort)
-	v.Dst.Port = int(udp.DstPort)
+	v.Src.UDP[int(udp.SrcPort)] = true
+	v.Dst.UDP[int(udp.DstPort)] = true
 }
 
 func handleDNS(v *ViewPair, dns layers.DNS) {

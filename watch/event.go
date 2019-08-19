@@ -10,6 +10,7 @@ const (
 	HostReturn
 	PortNew
 	PortDrop
+	PortReturn
 )
 
 type Event struct {
@@ -22,11 +23,28 @@ type EventHostNew struct {
 }
 
 type EventHostReturn struct {
-	Down time.Duration
 	Host *Host
+	Down time.Duration
 }
 
 type EventHostDrop struct {
+	Host *Host
 	Up   time.Duration
+}
+
+type EventPortNew struct {
+	Port *Port
+	Host *Host
+}
+
+type EventPortDrop struct {
+	Port *Port
+	Up   time.Duration
+	Host *Host
+}
+
+type EventPortReturn struct {
+	Port *Port
+	Down time.Duration
 	Host *Host
 }
