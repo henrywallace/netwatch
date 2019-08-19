@@ -2,10 +2,10 @@ package watch
 
 import "time"
 
-type EventKind int
+type EventType int
 
 const (
-	HostNew EventKind = iota
+	HostNew EventType = iota
 	HostDrop
 	HostReturn
 	PortNew
@@ -14,7 +14,7 @@ const (
 )
 
 type Event struct {
-	Kind EventKind
+	Type EventType
 	Body interface{}
 }
 

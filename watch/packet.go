@@ -324,20 +324,20 @@ func (w *Watcher) updateHostWithView(
 		curr = NewHost(*v.MAC, func(h *Host) {
 			up := time.Since(h.FirstSeenEpisode)
 			w.events <- Event{
-				Kind: HostDrop,
+				Type: HostDrop,
 				Body: EventHostDrop{h, up},
 			}
 		})
 		hosts[*v.MAC] = curr
 		w.events <- Event{
-			Kind: HostNew,
+			Type: HostNew,
 			Body: EventHostNew{curr},
 		}
 	} else {
 		if time.Since(prev.LastSeen) > ttlHost {
 			down := time.Since(prev.LastSeen)
 			w.events <- Event{
-				Kind: HostReturn,
+				Type: HostReturn,
 				Body: EventHostReturn{prev, down},
 			}
 		}
@@ -373,13 +373,13 @@ func (w *Watcher) updatePortsWithView(h *Host, v View) {
 			curr = NewPortTCP(num, func(p *Port) {
 				up := time.Since(p.FirstSeenEpisode)
 				w.events <- Event{
-					Kind: PortDrop,
+					Type: PortDrop,
 					Body: EventPortDrop{p, up, h},
 				}
 			})
 			h.TCP[num] = curr
 			w.events <- Event{
-				Kind: PortNew,
+				Type: PortNew,
 				Body: EventPortNew{curr, h},
 			}
 		} else {
@@ -389,7 +389,7 @@ func (w *Watcher) updatePortsWithView(h *Host, v View) {
 				// last seen.
 				down := time.Since(prev.LastSeen) - ttlPort
 				w.events <- Event{
-					Kind: PortReturn,
+					Type: PortReturn,
 					Body: EventPortReturn{prev, down, h},
 				}
 			}
@@ -406,13 +406,13 @@ func (w *Watcher) updatePortsWithView(h *Host, v View) {
 			curr = NewPortUDP(num, func(p *Port) {
 				up := time.Since(p.FirstSeenEpisode)
 				w.events <- Event{
-					Kind: PortDrop,
+					Type: PortDrop,
 					Body: EventPortDrop{p, up, h},
 				}
 			})
 			h.UDP[num] = curr
 			w.events <- Event{
-				Kind: PortNew,
+				Type: PortNew,
 				Body: EventPortNew{curr, h},
 			}
 		} else {
@@ -421,7 +421,7 @@ func (w *Watcher) updatePortsWithView(h *Host, v View) {
 				// ttlPort nanoseconds after it was last seen.
 				down := time.Since(prev.LastSeen) - ttlPort
 				w.events <- Event{
-					Kind: PortReturn,
+					Type: PortReturn,
 					Body: EventPortReturn{prev, down, h},
 				}
 			}

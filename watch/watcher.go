@@ -45,7 +45,7 @@ func (w *Watcher) Watch(ctx context.Context) error {
 
 func (w *Watcher) Respond() error {
 	for e := range w.events {
-		switch e.Kind {
+		switch e.Type {
 		case HostNew:
 			e := e.Body.(EventHostNew)
 			w.log.Infof("new %s", e.Host)
@@ -65,7 +65,7 @@ func (w *Watcher) Respond() error {
 			e := e.Body.(EventPortReturn)
 			w.log.Infof("return %s (down %s) on %s", e.Port, e.Down, e.Host)
 		default:
-			panic(fmt.Sprintf("unhandled event kind: %#v", e))
+			panic(fmt.Sprintf("unhandled event type: %#v", e))
 		}
 	}
 	return nil
