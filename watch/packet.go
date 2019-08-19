@@ -383,8 +383,11 @@ func (w *Watcher) updatePortsWithView(h *Host, v View) {
 				Body: EventPortNew{curr, h},
 			}
 		} else {
-			if time.Since(prev.LastSeen) > ttlHost {
-				down := time.Since(prev.LastSeen)
+			if time.Since(prev.LastSeen) > ttlPort {
+				// We consider the host to have been alive
+				// for ttlHost nanoseconds after it was
+				// last seen.
+				down := time.Since(prev.LastSeen) - ttlPort
 				w.events <- Event{
 					Kind: HostReturn,
 					Body: EventPortReturn{prev, down, h},
@@ -413,8 +416,10 @@ func (w *Watcher) updatePortsWithView(h *Host, v View) {
 				Body: EventPortNew{curr, h},
 			}
 		} else {
-			if time.Since(prev.LastSeen) > ttlHost {
-				down := time.Since(prev.LastSeen)
+			if time.Since(prev.LastSeen) > ttlPort {
+				// We consider the host to have been alive for
+				// ttlPort nanoseconds after it was last seen.
+				down := time.Since(prev.LastSeen) - ttlPort
 				w.events <- Event{
 					Kind: PortReturn,
 					Body: EventPortReturn{prev, down, h},
