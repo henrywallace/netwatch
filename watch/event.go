@@ -10,11 +10,11 @@ type EventType int
 const (
 	Invalid EventType = iota
 	HostNew
-	HostDrop
-	HostReturn
+	HostLost
+	HostFound
 	PortNew
-	PortDrop
-	PortReturn
+	PortLost
+	PortFound
 	// TODO: Add simple touch events.
 )
 
@@ -25,16 +25,16 @@ func (ty EventType) MarshalText() ([]byte, error) {
 		s = "invalid"
 	case HostNew:
 		s = "host.new"
-	case HostDrop:
-		s = "host.drop"
-	case HostReturn:
-		s = "host.return"
+	case HostLost:
+		s = "host.lost"
+	case HostFound:
+		s = "host.found"
 	case PortNew:
 		s = "port.new"
-	case PortDrop:
-		s = "port.drop"
-	case PortReturn:
-		s = "port.return"
+	case PortLost:
+		s = "port.lost"
+	case PortFound:
+		s = "port.found"
 	default:
 		panic(fmt.Sprintf("unknown event type: %v", ty))
 	}
@@ -48,16 +48,16 @@ func (ty *EventType) UnmarshalText(text []byte) error {
 		*ty = Invalid
 	case "host.new":
 		*ty = HostNew
-	case "host.drop":
-		*ty = HostDrop
-	case "host.return":
-		*ty = HostReturn
+	case "host.lost":
+		*ty = HostLost
+	case "host.found":
+		*ty = HostFound
 	case "port.new":
 		*ty = PortNew
-	case "port.drop":
-		*ty = PortDrop
-	case "port.return":
-		*ty = PortReturn
+	case "port.lost":
+		*ty = PortLost
+	case "port.found":
+		*ty = PortFound
 	default:
 		panic(fmt.Sprintf("unknown event type: %v", ty))
 	}
@@ -73,12 +73,12 @@ type EventHostNew struct {
 	Host *Host
 }
 
-type EventHostReturn struct {
+type EventHostFound struct {
 	Host *Host
 	Down time.Duration
 }
 
-type EventHostDrop struct {
+type EventHostLost struct {
 	Host *Host
 	Up   time.Duration
 }

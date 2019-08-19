@@ -69,19 +69,19 @@ func SubLogger(log *logrus.Logger) Subscriber {
 		case HostNew:
 			e := e.Body.(EventHostNew)
 			log.Infof("new %s", e.Host)
-		case HostDrop:
-			e := e.Body.(EventHostDrop)
+		case HostLost:
+			e := e.Body.(EventHostLost)
 			log.Infof("drop %s (up %s)", e.Host, e.Up)
-		case HostReturn:
-			e := e.Body.(EventHostReturn)
+		case HostFound:
+			e := e.Body.(EventHostFound)
 			log.Infof("return %s (down %s)", e.Host, e.Down)
 		case PortNew:
 			e := e.Body.(EventPortNew)
 			log.Infof("new %s on %s", e.Port, e.Host)
-		case PortDrop:
+		case PortLost:
 			e := e.Body.(EventPortDrop)
 			log.Infof("drop %s (up %s) on %s", e.Port, e.Up, e.Host)
-		case PortReturn:
+		case PortFound:
 			e := e.Body.(EventPortReturn)
 			log.Infof("return %s (down %s) on %s", e.Port, e.Down, e.Host)
 		default:
