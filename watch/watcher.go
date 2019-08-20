@@ -175,9 +175,6 @@ func newTriggerFromConfig(
 			if spec.OnAny {
 				return true
 			}
-			if spec.OnEvent != Invalid {
-				return spec.OnEvent == e.Type
-			}
 			if len(spec.OnEventsExcept) > 0 {
 				for _, ty := range spec.OnEventsExcept {
 					if ty == e.Type {
