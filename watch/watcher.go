@@ -21,17 +21,23 @@ var (
 	ttlPort = 30 * time.Second
 )
 
+// Watcher watches network activity and sends resultant Events to all of it's
+// Subscribers.
 type Watcher struct {
 	log    *logrus.Logger
 	events chan Event
 	subs   []Subscriber
 }
 
+// Subscriber handles a single event and reacts to it. A Subscriber can be
+// wrapped within a Trigger if they wish to filter which Events are recieved by
+// the Subscriber.
 type Subscriber func(e Event) error
 
+// NewWatcher creates a new watcher initialized with the given subscribers.
 func NewWatcher(log *logrus.Logger, subs ...Subscriber) *Watcher {
 	if len(subs) == 0 {
-		subs = []Subscriber{SubLogger(log)}
+		subs = []Subscriber{NewSubLogger(log)}
 	}
 	return &Watcher{
 		log:    log,
@@ -40,6 +46,9 @@ func NewWatcher(log *logrus.Logger, subs ...Subscriber) *Watcher {
 	}
 }
 
+// Watch starts to watch all network activity, and publish resultant Events to
+// all of it's Subscribers. This function will at least probably block for a
+// very long time.
 func (w *Watcher) Watch(ctx context.Context) error {
 	iface := os.Getenv("IFACE")
 	if iface == "" {
@@ -55,6 +64,8 @@ func (w *Watcher) Watch(ctx context.Context) error {
 	return w.Publish()
 }
 
+// Publish endlessly reads incomming events, and sends a shallow copy of that
+// event to each of this Watcher's Subscribers.
 func (w *Watcher) Publish() error {
 	for e := range w.events {
 		for _, sub := range w.subs {
@@ -66,7 +77,9 @@ func (w *Watcher) Publish() error {
 	return nil
 }
 
-func SubLogger(log *logrus.Logger) Subscriber {
+// NewSubLogger returns a new logging Subscriber. For each event, some
+// hopefully useful information is logged.
+func NewSubLogger(log *logrus.Logger) Subscriber {
 	return func(e Event) error {
 		switch e.Type {
 		case HostTouch:
@@ -88,10 +101,10 @@ func SubLogger(log *logrus.Logger) Subscriber {
 			e := e.Body.(EventPortNew)
 			log.Infof("new %s on %s", e.Port, e.Host)
 		case PortLost:
-			e := e.Body.(EventPortDrop)
+			e := e.Body.(EventPortLost)
 			log.Infof("drop %s (up %s) on %s", e.Port, e.Up, e.Host)
 		case PortFound:
-			e := e.Body.(EventPortReturn)
+			e := e.Body.(EventPortFound)
 			log.Infof("return %s (down %s) on %s", e.Port, e.Down, e.Host)
 		default:
 			panic(fmt.Sprintf("unhandled event type: %#v", e))
@@ -100,7 +113,8 @@ func SubLogger(log *logrus.Logger) Subscriber {
 	}
 }
 
-func SubConfig(
+// NewSubConfig returns a new Subscriber
+func NewSubConfig(
 	log *logrus.Logger,
 	path string,
 	only []string,
@@ -113,7 +127,7 @@ func SubConfig(
 
 	triggers := make(map[string]Trigger)
 	onlySet := stringSet(only)
-	for name, spec := range conf.Subscribers {
+	for name, spec := range conf.Triggers {
 		if len(onlySet) > 0 && !onlySet[name] {
 			continue
 		}
@@ -149,6 +163,7 @@ func stringSet(slice []string) map[string]bool {
 	return m
 }
 
+// Trigger combines a Subscriber with an event "filter" closure.
 type Trigger struct {
 	Sub      Subscriber
 	ShouldDo func(e Event) bool
@@ -157,7 +172,7 @@ type Trigger struct {
 func newTriggerFromConfig(
 	log *logrus.Logger,
 	name string,
-	spec SubSpec,
+	spec TriggerSpec,
 ) Trigger {
 	var sub Subscriber
 	if spec.DoBuiltin != "" {
@@ -197,9 +212,9 @@ func newSubFromBuiltin(log *logrus.Logger, builtin string) Subscriber {
 	var sub Subscriber
 	switch strings.ToLower(builtin) {
 	case "log":
-		sub = SubLogger(log)
+		sub = NewSubLogger(log)
 	default:
-		panic(fmt.Sprintf("unknown sub name: '%s'", builtin))
+		panic(fmt.Sprintf("unsupported sub name: '%s'", builtin))
 	}
 	return sub
 }
@@ -265,12 +280,12 @@ func newEventInfo(e Event) eventInfo {
 		info.Port = *e.Port
 		info.Host = *e.Host
 	case PortLost:
-		e := e.Body.(EventPortDrop)
+		e := e.Body.(EventPortLost)
 		info.Port = *e.Port
 		info.Up = e.Up
 		info.Host = *e.Host
 	case PortFound:
-		e := e.Body.(EventPortReturn)
+		e := e.Body.(EventPortFound)
 		info.Port = *e.Port
 		info.Down = e.Down
 		info.Host = *e.Host

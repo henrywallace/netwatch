@@ -31,7 +31,7 @@ func main(cmd *cobra.Command, args []string) error {
 	path := mustString(log, cmd, "config")
 	only := mustStringSlice(log, cmd, "only")
 	if path != "" {
-		sub, err := watch.SubConfig(log, path, only)
+		sub, err := watch.NewSubConfig(log, path, only)
 		if err != nil {
 			return err
 		}

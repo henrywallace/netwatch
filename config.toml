@@ -1,12 +1,12 @@
-[subs]
-  [subs.log]
+[triggers]
+  [triggers.log]
     onEventsExcept = ["host.touch", "port.touch"]
     doBuiltin = "log"
-  [subs.example]
+  [triggeres.example]
     disabled = true
     onEvents = ["host.new"]
     doShell = "echo Hello {{.Host.IPv4}} - $(date)"
-  [subs.gmail]
+  [triggers.gmail]
     disabled = true
     onEvents = ["host.new"]
     doShell = "notify -s 'New host {{.Host.MAC}} on {{.Host.IPv4}}'"

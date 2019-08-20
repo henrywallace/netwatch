@@ -69,6 +69,11 @@ func (h *Host) Touch() {
 	h.expire.Reset(ttlHost)
 }
 
+// ActiveTCP returns all TCP ports for the given Host that are currently
+// active.
+//
+// NOTE: Due to the expiring nature of Ports, it may be that returned pointers
+// to Ports are inactive when received or used.
 func (h Host) ActiveTCP() []*Port {
 	var active []*Port
 	for _, p := range h.TCP {
@@ -79,6 +84,11 @@ func (h Host) ActiveTCP() []*Port {
 	return active
 }
 
+// ActiveUDP returns all UDP ports for the given Host that are currently
+// active.
+//
+// NOTE: Due to the expiring nature of Ports, it may be that returned pointers
+// to Ports are inactive when received or used.
 func (h Host) ActiveUDP() []*Port {
 	var active []*Port
 	for _, p := range h.UDP {
@@ -89,7 +99,13 @@ func (h Host) ActiveUDP() []*Port {
 	return active
 }
 
+// Port represents a TCP or UDP connection. A Port could both appear on either
+// a sending or receiving host. Each Port has a TTL, before being considered
+// inactive. But it can be "touched" to be kept alive.
 type Port struct {
+	// TODO: Reduce the duplicity between the "expriation fields" between
+	// this Port type and a Host. Surely that can be shared.
+
 	Active           bool
 	FirstSeen        time.Time
 	FirstSeenEpisode time.Time
@@ -112,6 +128,8 @@ func (p *Port) Touch() {
 	p.expire.Reset(ttlHost)
 }
 
+// NewPortTCP returns a new TCP port of the given port number. And a function
+// one what to do when the port expires, given a pointer to the created Port.
 func NewPortTCP(
 	num int,
 	expire func(p *Port),
@@ -131,6 +149,8 @@ func NewPortTCP(
 	return &p
 }
 
+// NewPortUDP returns a new UDP port of the given port number. And a function
+// one what to do when the port expires, given a pointer to the created Port.
 func NewPortUDP(
 	num int,
 	expire func(p *Port),
@@ -166,21 +186,8 @@ func (p Port) String() string {
 // maps.
 type MAC string
 
-// $ rg 'layers\.(LayerType[A-Z]\w+)\b' -I -or '$1' | sort | uniq -c | sort -nr
-// 19 LayerTypeEthernet
-// 13 LayerTypeTCP
-// 12 LayerTypeLCM
-//  9 LayerTypeIPv4
-//  5 LayerTypeIPv6
-//  2 LayerTypeUDP
-//  2 LayerTypeDNS
-//  2 LayerTypeARP
-//  1 LayerTypePFLog
-//  1 LayerTypeLoopback
-//  1 LayerTypeDot11InformationElement
-//
-// But hmm, there seem to be layers that don't satify the decoding
-// interface as necessary below.
+// Hmm, it seems that there exist layers which don't satify the decoding
+// interface as necessary in gopacket.NewDecodingLayerParser below.
 type availLayers struct {
 	eth     layers.Ethernet
 	tcp     layers.TCP
@@ -201,7 +208,10 @@ type availLayers struct {
 
 // View represents a subset of information depicted about a Host, from a single
 // packet. This can be used to be associate with a host, and update it's
-// information.
+// information. A View's properties are intended to be updated as different
+// layers of the packet are decoded. Some packet layers may not yet influence a
+// View, but it aims to capture as much information from each packet as
+// possible before updating the hosts.
 type View struct {
 	MAC  *MAC
 	IPv4 net.IP
@@ -210,6 +220,7 @@ type View struct {
 	UDP  map[int]bool
 }
 
+// NewView returns a new
 func NewView() View {
 	return View{
 		TCP: make(map[int]bool),
@@ -289,8 +300,8 @@ func (w *Watcher) ScanPackets(
 	}
 }
 
-// // Consider using a graph database for storing all directed interactions
-// // between the hosts.
+// Consider using a graph database for storing all directed interactions
+// between the hosts.
 
 // InvalidHost can be used to represent a newly found Host, where there is only
 // a non-empty Curr.
@@ -313,7 +324,7 @@ func (w *Watcher) updateHostWithView(
 ) {
 	// TODO: Relieve this handicap, which is an artifact of the hosts
 	// map[MAC]*Host datastructure, which should be made more
-	// relational.
+	// flexible.
 	if v.MAC == nil {
 		return
 	}
@@ -378,7 +389,7 @@ func (w *Watcher) updatePortsWithView(h *Host, v View) {
 				up := time.Since(p.FirstSeenEpisode)
 				w.events <- Event{
 					Type: PortLost,
-					Body: EventPortDrop{p, up, h},
+					Body: EventPortLost{p, up, h},
 				}
 			})
 			h.TCP[num] = curr
@@ -388,13 +399,12 @@ func (w *Watcher) updatePortsWithView(h *Host, v View) {
 			}
 		} else {
 			if time.Since(prev.LastSeen) > ttlPort {
-				// We consider the host to have been alive
-				// for ttlHost nanoseconds after it was
-				// last seen.
+				// We consider the host to have been alive for
+				// ttlPort nanoseconds after it was last seen.
 				down := time.Since(prev.LastSeen) - ttlPort
 				w.events <- Event{
 					Type: PortFound,
-					Body: EventPortReturn{prev, down, h},
+					Body: EventPortFound{prev, down, h},
 				}
 			}
 			curr = prev
@@ -411,7 +421,7 @@ func (w *Watcher) updatePortsWithView(h *Host, v View) {
 				up := time.Since(p.FirstSeenEpisode)
 				w.events <- Event{
 					Type: PortLost,
-					Body: EventPortDrop{p, up, h},
+					Body: EventPortLost{p, up, h},
 				}
 			})
 			h.UDP[num] = curr
@@ -426,7 +436,7 @@ func (w *Watcher) updatePortsWithView(h *Host, v View) {
 				down := time.Since(prev.LastSeen) - ttlPort
 				w.events <- Event{
 					Type: PortFound,
-					Body: EventPortReturn{prev, down, h},
+					Body: EventPortFound{prev, down, h},
 				}
 			}
 			curr = prev

@@ -6,6 +6,8 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// NewLogger creates a new logger whose level can be controlled with the env
+// WATCHER_LOGLEVEL.
 func NewLogger() *logrus.Logger {
 	log := logrus.StandardLogger()
 
@@ -14,7 +16,7 @@ func NewLogger() *logrus.Logger {
 	format.FullTimestamp = true
 	log.SetFormatter(format)
 
-	val := os.Getenv("HOMELAB_LOGLEVEL")
+	val := os.Getenv("WATCHER_LOGLEVEL")
 	if val == "" {
 		val = "INFO"
 	}

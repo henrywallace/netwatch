@@ -1,10 +1,12 @@
 package watch
 
+// Config holds configuration for Triggers.
 type Config struct {
-	Subscribers map[string]SubSpec `toml:"subs"`
+	Triggers map[string]TriggerSpec `toml:"triggers"`
 }
 
-type SubSpec struct {
+// TriggerSpec describes specification for one trigger.
+type TriggerSpec struct {
 	Disabled       bool
 	OnEvents       []EventType
 	OnEventsExcept []EventType

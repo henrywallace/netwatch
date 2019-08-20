@@ -5,8 +5,21 @@ import (
 	"time"
 )
 
+// Event represents network activity. Events are intended to provide
+// higher-level descriptions of network changes, possibly encapsulating packets
+// seen over an extended period of time.
+//
+// A body of information peritent to the event type is attached to each event.
+// For example, the relevant introcution of a new host's MAC address.
+type Event struct {
+	Type EventType
+	Body interface{}
+}
+
+// EventType describes the type of Event that has occurred.
 type EventType int
 
+// A complete list of types of Events.
 const (
 	Invalid EventType = iota
 	HostTouch
@@ -19,6 +32,7 @@ const (
 	PortFound
 )
 
+// MarshalText satisfies the encoding.TextMarshaler interface.
 func (ty EventType) MarshalText() ([]byte, error) {
 	var s string
 	switch ty {
@@ -46,6 +60,7 @@ func (ty EventType) MarshalText() ([]byte, error) {
 	return []byte(s), nil
 }
 
+// UnmarshalText satisfies the encoding.TextUnmarshaler interface.
 func (ty *EventType) UnmarshalText(text []byte) error {
 	s := string(text)
 	switch s {
@@ -73,56 +88,65 @@ func (ty *EventType) UnmarshalText(text []byte) error {
 	return nil
 }
 
-type Event struct {
-	Type EventType
-	Body interface{}
-}
-
 //
 // host
 //
 
+// EventHostTouch happens when any activity updates the state of a host.
 type EventHostTouch struct {
 	Host *Host
 	// TODO: Add an id or number indicating which number this is, or some
 	// other stats. Might be useful for other event bodies as well.
 }
 
+// EventHostNew happens upon the introduction of a new host not yet seen.
+// Becoming inactive does not make it unseen.
 type EventHostNew struct {
 	Host *Host
 }
 
-type EventHostFound struct {
-	Host *Host
-	Down time.Duration
-}
-
+// EventHostLost happens when a host becomes inactive, after having no activity
+// for some amount of time.
 type EventHostLost struct {
 	Host *Host
 	Up   time.Duration
+}
+
+// EventHostFound happens whenever a host becomes active again after being
+// contiguously inactive for some period of time.
+type EventHostFound struct {
+	Host *Host
+	Down time.Duration
 }
 
 //
 // port
 //
 
+// EventPortTouch happens when any activity updates the state of a Port.
 type EventPortTouch struct {
 	Port *Port
 	Host *Host
 }
 
+// EventPortNew happens upon the introduction of a new port not yet seen.
+// Becoming inactive does not make it unseen.
 type EventPortNew struct {
 	Port *Port
 	Host *Host
 }
 
-type EventPortDrop struct {
+// EventPortLost happens when a port becomes inactive, after having no activity
+// for some amount of time.
+type EventPortLost struct {
 	Port *Port
 	Up   time.Duration
 	Host *Host
 }
 
-type EventPortReturn struct {
+// EventPortFound happens whenever a port becomes active again after being
+// contiguously inactive for some period of time.
+type EventPortFound struct {
 	Port *Port
 	Down time.Duration
 	Host *Host
