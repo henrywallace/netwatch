@@ -19,7 +19,8 @@ var rootCmd = &cobra.Command{
 }
 
 func init() {
-	rootCmd.Flags().StringP("config", "c", "config.toml", "toml file to exec config")
+	rootCmd.Flags().StringP("config", "c", "config.toml", "toml file to trigger config")
+	rootCmd.Flags().StringSliceP("only", "o", nil, "config trigger names to only run")
 }
 
 func main(cmd *cobra.Command, args []string) error {
@@ -28,8 +29,9 @@ func main(cmd *cobra.Command, args []string) error {
 
 	var subs []watch.Subscriber
 	path := mustString(log, cmd, "config")
+	only := mustStringSlice(log, cmd, "only")
 	if path != "" {
-		sub, err := watch.SubConfig(log, path)
+		sub, err := watch.SubConfig(log, path, only)
 		if err != nil {
 			return err
 		}
@@ -55,6 +57,18 @@ func mustString(
 	name string,
 ) string {
 	val, err := cmd.Flags().GetString(name)
+	if err != nil {
+		log.Fatal(err)
+	}
+	return val
+}
+
+func mustStringSlice(
+	log *logrus.Logger,
+	cmd *cobra.Command,
+	name string,
+) []string {
+	val, err := cmd.Flags().GetStringSlice(name)
 	if err != nil {
 		log.Fatal(err)
 	}

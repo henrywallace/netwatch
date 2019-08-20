@@ -1,7 +1,8 @@
 [subs]
-  # [subs.log]
-  #   onEventsExcept = ["host.touch", "port.touch"]
-  #   doBuiltin = "log"
+  [subs.log]
+    onEventsExcept = ["host.touch", "port.touch"]
+    doBuiltin = "log"
   [subs.example]
+    disabled = true
     onEvents = ["host.new"]
     doShell = "echo Hello {{.Host.IPv4}} - $(date)"

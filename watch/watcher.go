@@ -100,7 +100,11 @@ func SubLogger(log *logrus.Logger) Subscriber {
 	}
 }
 
-func SubConfig(log *logrus.Logger, path string) (Subscriber, error) {
+func SubConfig(
+	log *logrus.Logger,
+	path string,
+	only []string,
+) (Subscriber, error) {
 	var conf Config
 	if _, err := toml.DecodeFile(path, &conf); err != nil {
 		return nil, err
@@ -108,9 +112,20 @@ func SubConfig(log *logrus.Logger, path string) (Subscriber, error) {
 	// TODO: validate config, e.g. not on event and on events, etc.
 
 	triggers := make(map[string]Trigger)
+	onlySet := stringSet(only)
 	for name, spec := range conf.Subscribers {
+		if len(onlySet) > 0 && !onlySet[name] {
+			continue
+		}
 		log.Debugf("loading subscriber %s", name)
-		triggers[name] = newTriggerFromConfig(log, name, spec)
+		trig := newTriggerFromConfig(log, name, spec)
+		if spec.Disabled && !onlySet[name] {
+			continue
+		}
+		triggers[name] = trig
+	}
+	if len(triggers) == 0 {
+		log.Fatal("no subscribers loaded")
 	}
 
 	return func(e Event) error {
@@ -124,6 +139,14 @@ func SubConfig(log *logrus.Logger, path string) (Subscriber, error) {
 		}
 		return nil
 	}, nil
+}
+
+func stringSet(slice []string) map[string]bool {
+	m := make(map[string]bool)
+	for _, s := range slice {
+		m[s] = true
+	}
+	return m
 }
 
 type Trigger struct {

@@ -5,6 +5,7 @@ type Config struct {
 }
 
 type SubSpec struct {
+	Disabled       bool
 	OnEvent        EventType
 	OnEvents       []EventType
 	OnEventsExcept []EventType
