@@ -1,4 +1,4 @@
 [subs]
   [subs.log]
     onAny = true
-    do = "log"
+    doBuiltin = "log"

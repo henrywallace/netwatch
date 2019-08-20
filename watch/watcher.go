@@ -130,11 +130,11 @@ type Trigger struct {
 
 func newTriggerFromConfig(log *logrus.Logger, name string, spec SubSpec) Trigger {
 	var sub Subscriber
-	switch strings.ToLower(spec.Do) {
-	case "log":
-		sub = SubLogger(log)
-	default:
-		panic(fmt.Sprintf("unknown sub name: '%s'", name))
+	if spec.DoBuiltin != "" {
+		sub = newSubFromBuiltin(log, spec.DoBuiltin)
+	}
+	if sub == nil {
+		log.Fatalf("failed to define trigger from spec.Do: %#v", spec)
 	}
 	return Trigger{
 		Sub: sub,
@@ -153,4 +153,15 @@ func newTriggerFromConfig(log *logrus.Logger, name string, spec SubSpec) Trigger
 			return false
 		},
 	}
+}
+
+func newSubFromBuiltin(log *logrus.Logger, builtin string) Subscriber {
+	var sub Subscriber
+	switch strings.ToLower(builtin) {
+	case "log":
+		sub = SubLogger(log)
+	default:
+		panic(fmt.Sprintf("unknown sub name: '%s'", builtin))
+	}
+	return sub
 }
