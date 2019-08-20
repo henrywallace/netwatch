@@ -6,3 +6,7 @@
     disabled = true
     onEvents = ["host.new"]
     doShell = "echo Hello {{.Host.IPv4}} - $(date)"
+  [subs.gmail]
+    disabled = true
+    onEvents = ["host.new"]
+    doShell = "notify -s 'New host {{.Host.MAC}} on {{.Host.IPv4}}'"
