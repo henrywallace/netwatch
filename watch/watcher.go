@@ -1,9 +1,12 @@
 package watch
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"html/template"
 	"os"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -128,10 +131,17 @@ type Trigger struct {
 	ShouldDo func(e Event) bool
 }
 
-func newTriggerFromConfig(log *logrus.Logger, name string, spec SubSpec) Trigger {
+func newTriggerFromConfig(
+	log *logrus.Logger,
+	name string,
+	spec SubSpec,
+) Trigger {
 	var sub Subscriber
 	if spec.DoBuiltin != "" {
 		sub = newSubFromBuiltin(log, spec.DoBuiltin)
+	}
+	if spec.DoShell != "" {
+		sub = newSubFromShell(context.TODO(), log, spec.DoShell)
 	}
 	if sub == nil {
 		log.Fatalf("failed to define trigger from spec.Do: %#v", spec)
@@ -172,4 +182,80 @@ func newSubFromBuiltin(log *logrus.Logger, builtin string) Subscriber {
 		panic(fmt.Sprintf("unknown sub name: '%s'", builtin))
 	}
 	return sub
+}
+
+func newSubFromShell(
+	ctx context.Context,
+	log *logrus.Logger,
+	shell string,
+) Subscriber {
+	return func(e Event) error {
+		shell = os.ExpandEnv(shell)
+		tmpl, err := template.New("").Parse(shell)
+		if err != nil {
+			return err
+		}
+		info := newEventInfo(e)
+		var buf bytes.Buffer
+		err = tmpl.Execute(&buf, info)
+		if err != nil {
+			return err
+		}
+		cmd := exec.CommandContext(ctx, "/bin/sh", "-c", buf.String())
+		b, err := cmd.CombinedOutput()
+		if err != nil {
+			return err
+		}
+		out := strings.TrimSpace(string(b))
+		fmt.Println(out)
+		return nil
+	}
+}
+
+type eventInfo struct {
+	Host Host
+	Port Port
+	Up   time.Duration
+	Down time.Duration
+}
+
+func newEventInfo(e Event) eventInfo {
+	var info eventInfo
+	switch e.Type {
+	case HostTouch:
+		e := e.Body.(EventHostTouch)
+		info.Host = *e.Host
+	case HostNew:
+		e := e.Body.(EventHostNew)
+		info.Host = *e.Host
+	case HostLost:
+		e := e.Body.(EventHostLost)
+		info.Host = *e.Host
+		info.Up = e.Up
+	case HostFound:
+		e := e.Body.(EventHostFound)
+		info.Host = *e.Host
+		info.Down = e.Down
+	case PortTouch:
+		e := e.Body.(EventPortTouch)
+		info.Port = *e.Port
+		info.Host = *e.Host
+	case PortNew:
+		e := e.Body.(EventPortNew)
+		info.Port = *e.Port
+		info.Host = *e.Host
+	case PortLost:
+		e := e.Body.(EventPortDrop)
+		info.Port = *e.Port
+		info.Up = e.Up
+		info.Host = *e.Host
+	case PortFound:
+		e := e.Body.(EventPortReturn)
+		info.Port = *e.Port
+		info.Down = e.Down
+		info.Host = *e.Host
+	default:
+		panic(fmt.Sprintf("unhandled event type: %#v", e))
+	}
+	return info
 }

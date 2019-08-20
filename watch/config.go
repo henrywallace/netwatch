@@ -10,4 +10,5 @@ type SubSpec struct {
 	OnEventsExcept []EventType
 	OnAny          bool
 	DoBuiltin      string
+	DoShell        string
 }
