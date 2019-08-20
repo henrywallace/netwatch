@@ -5,8 +5,9 @@ type Config struct {
 }
 
 type SubSpec struct {
-	OnEvent   EventType
-	OnEvents  []EventType
-	OnAny     bool
-	DoBuiltin string
+	OnEvent        EventType
+	OnEvents       []EventType
+	OnEventsExcept []EventType
+	OnAny          bool
+	DoBuiltin      string
 }

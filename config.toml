@@ -1,4 +1,4 @@
 [subs]
   [subs.log]
-    onAny = true
+    onEventsExcept = ["host.touch", "port.touch"]
     doBuiltin = "log"

@@ -145,6 +145,14 @@ func newTriggerFromConfig(log *logrus.Logger, name string, spec SubSpec) Trigger
 			if spec.OnEvent != Invalid {
 				return spec.OnEvent == e.Type
 			}
+			if len(spec.OnEventsExcept) > 0 {
+				for _, ty := range spec.OnEventsExcept {
+					if ty == e.Type {
+						return false
+					}
+				}
+				return true
+			}
 			for _, ty := range spec.OnEvents {
 				if ty == e.Type {
 					return true
