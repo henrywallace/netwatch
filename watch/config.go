@@ -11,6 +11,7 @@ type TriggerSpec struct {
 	OnEvents       []EventType
 	OnEventsExcept []EventType
 	OnAny          bool
+	OnShell        string
 	DoBuiltin      string
 	DoShell        string
 }

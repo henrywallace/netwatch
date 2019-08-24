@@ -92,6 +92,10 @@ func (ty *EventType) UnmarshalText(text []byte) error {
 // host
 //
 
+// TODO: All of these events should be copies of events. If these events are
+// fed into many different subscribers, then some of the attributes about the
+// Host or Port, may not be correct.
+
 // EventHostTouch happens when any activity updates the state of a host.
 type EventHostTouch struct {
 	Host *Host

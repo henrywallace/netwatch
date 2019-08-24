@@ -36,6 +36,11 @@ func (h Host) String() string {
 	)
 }
 
+// Age returns how long it's been the host was first seen.
+func (h Host) Age() time.Duration {
+	return time.Since(h.FirstSeen)
+}
+
 // NewHost returns a new Host whose first and last seen timestamps are set
 // to now.
 func NewHost(
@@ -126,6 +131,11 @@ func (p *Port) Touch() {
 	p.Active = true
 	p.LastSeen = now
 	p.expire.Reset(ttlHost)
+}
+
+// Age returns how long it's been the port was first seen.
+func (p Port) Age() time.Duration {
+	return time.Since(p.FirstSeen)
 }
 
 // NewPortTCP returns a new TCP port of the given port number. And a function
@@ -409,7 +419,7 @@ func (w *Watcher) updatePortsWithView(h *Host, v View) {
 			}
 			curr = prev
 			curr.Touch()
-			w.log.Debugf("touch host %s", curr)
+			w.log.Debugf("touch host %s on %s", curr, h.IPv4)
 		}
 
 	}
@@ -441,7 +451,7 @@ func (w *Watcher) updatePortsWithView(h *Host, v View) {
 			}
 			curr = prev
 			curr.Touch()
-			w.log.Debugf("touch host %s", curr)
+			w.log.Debugf("touch host %s on %s", curr, h.IPv4)
 			w.events <- Event{
 				Type: PortTouch,
 				Body: EventPortTouch{curr, h},

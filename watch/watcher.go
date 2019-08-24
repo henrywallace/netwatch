@@ -13,6 +13,7 @@ import (
 	"github.com/BurntSushi/toml"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/pcap"
+	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
 
@@ -182,13 +183,24 @@ func newTriggerFromConfig(
 		sub = newSubFromShell(context.TODO(), log, spec.DoShell)
 	}
 	if sub == nil {
-		log.Fatalf("failed to define trigger from spec.Do: %#v", spec)
+		log.Fatalf(
+			"failed to construct a trigger, "+
+				"did you fill out doBuiltin or doShell?: %#v",
+			spec,
+		)
+	}
+	var shouldDo func(e Event) bool
+	if spec.OnShell != "" {
+		shouldDo = newShouldDoFromShell(context.TODO(), log, spec.OnShell)
 	}
 	return Trigger{
 		Sub: sub,
 		ShouldDo: func(e Event) bool {
 			if spec.OnAny {
 				return true
+			}
+			if shouldDo != nil {
+				return shouldDo(e)
 			}
 			if len(spec.OnEventsExcept) > 0 {
 				for _, ty := range spec.OnEventsExcept {
@@ -239,7 +251,7 @@ func newSubFromShell(
 		cmd := exec.CommandContext(ctx, "/bin/sh", "-c", buf.String())
 		b, err := cmd.CombinedOutput()
 		if err != nil {
-			return err
+			return errors.Wrapf(err, "failed to run command: %v", string(b))
 		}
 		out := strings.TrimSpace(string(b))
 		fmt.Println(out)
@@ -247,50 +259,142 @@ func newSubFromShell(
 	}
 }
 
-type eventInfo struct {
-	Host Host
-	Port Port
-	Up   time.Duration
-	Down time.Duration
+func newShouldDoFromShell(
+	ctx context.Context,
+	log *logrus.Logger,
+	shell string,
+) func(e Event) bool {
+	shell = os.ExpandEnv(shell)
+	tmpl, err := template.New("").Parse(shell)
+	if err != nil {
+		log.WithError(err).Fatalf("failed to template parse shell: %s", shell)
+	}
+	return func(e Event) bool {
+		info := newEventInfo(e)
+		var buf bytes.Buffer
+		err = tmpl.Execute(&buf, info)
+		if err != nil {
+			log.WithError(err).Fatalf("failed to execute template")
+			return false
+		}
+		cmd := exec.CommandContext(ctx, "/bin/sh", "-c", buf.String())
+		b, err := cmd.CombinedOutput()
+		if err != nil {
+			// The point of this shell command is to return a
+			// non-zero exit code when an event should be skipped.
+			// However, we also log so as to not preclude
+			// debugging.
+			log.Debugf("failed to run output: %v: %s", err, string(b))
+			return false
+		}
+		return true
+	}
 }
 
-func newEventInfo(e Event) eventInfo {
-	var info eventInfo
+type printableEvent struct {
+	Description string
+	Host        Host
+	Port        Port
+	PortString  string
+	Up          time.Duration
+	Down        time.Duration
+	Age         time.Duration
+}
+
+func newEventInfo(e Event) printableEvent {
+	var pe printableEvent
 	switch e.Type {
 	case HostTouch:
 		e := e.Body.(EventHostTouch)
-		info.Host = *e.Host
+		pe.Host = *e.Host
+		pe.Description = fmt.Sprintf(
+			"touched host %s at %s (up %s) (age %s)",
+			e.Host.MAC,
+			e.Host.IPv4,
+			time.Since(e.Host.FirstSeenEpisode),
+			e.Host.Age(),
+		)
 	case HostNew:
 		e := e.Body.(EventHostNew)
-		info.Host = *e.Host
+		pe.Host = *e.Host
+		pe.Age = e.Host.Age()
+		pe.Description = fmt.Sprintf(
+			"new host %s at %s",
+			e.Host.MAC,
+			e.Host.IPv4,
+		)
 	case HostLost:
 		e := e.Body.(EventHostLost)
-		info.Host = *e.Host
-		info.Up = e.Up
+		pe.Host = *e.Host
+		pe.Up = e.Up
+		pe.Description = fmt.Sprintf(
+			"new host %s at %s (up %s) (age %s)",
+			e.Host.MAC,
+			e.Host.IPv4,
+			e.Up,
+			e.Host.Age(),
+		)
 	case HostFound:
 		e := e.Body.(EventHostFound)
-		info.Host = *e.Host
-		info.Down = e.Down
+		pe.Host = *e.Host
+		pe.Down = e.Down
+		pe.Description = fmt.Sprintf(
+			"found host %s at %s (down %s) (age %s)",
+			e.Host.MAC,
+			e.Host.IPv4,
+			e.Down,
+			e.Host.Age(),
+		)
 	case PortTouch:
 		e := e.Body.(EventPortTouch)
-		info.Port = *e.Port
-		info.Host = *e.Host
+		pe.Port = *e.Port
+		pe.Host = *e.Host
+		pe.PortString = e.Port.String()
+		pe.Description = fmt.Sprintf(
+			"touched port %s at %s (up %s)",
+			pe.Port,
+			pe.Host.IPv4,
+			time.Since(pe.Host.FirstSeenEpisode),
+		)
 	case PortNew:
 		e := e.Body.(EventPortNew)
-		info.Port = *e.Port
-		info.Host = *e.Host
+		pe.Port = *e.Port
+		pe.Host = *e.Host
+		pe.PortString = e.Port.String()
+		pe.Description = fmt.Sprintf(
+			"new port %s at %s (age %s)",
+			e.Port,
+			e.Host.IPv4,
+			e.Port.Age(),
+		)
 	case PortLost:
 		e := e.Body.(EventPortLost)
-		info.Port = *e.Port
-		info.Up = e.Up
-		info.Host = *e.Host
+		pe.Port = *e.Port
+		pe.Up = e.Up
+		pe.Host = *e.Host
+		pe.PortString = e.Port.String()
+		pe.Description = fmt.Sprintf(
+			"new port %s at %s (up %s) (age %s)",
+			e.Port,
+			e.Host.IPv4,
+			e.Up,
+			e.Port.Age(),
+		)
 	case PortFound:
 		e := e.Body.(EventPortFound)
-		info.Port = *e.Port
-		info.Down = e.Down
-		info.Host = *e.Host
+		pe.Port = *e.Port
+		pe.Down = e.Down
+		pe.Host = *e.Host
+		pe.PortString = e.Port.String()
+		pe.Description = fmt.Sprintf(
+			"found port %s at %s (down %s) (age %s)",
+			e.Port,
+			e.Host.IPv4,
+			e.Down,
+			e.Port.Age(),
+		)
 	default:
 		panic(fmt.Sprintf("unhandled event type: %#v", e))
 	}
-	return info
+	return pe
 }
