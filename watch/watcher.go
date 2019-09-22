@@ -47,22 +47,32 @@ func NewWatcher(log *logrus.Logger, subs ...Subscriber) *Watcher {
 	}
 }
 
-// Watch starts to watch all network activity, and publish resultant Events to
-// all of it's Subscribers. This function will at least probably block for a
-// very long time.
-func (w *Watcher) Watch(ctx context.Context) error {
-	iface := os.Getenv("IFACE")
-	if iface == "" {
-		w.log.Fatal("must provide env IFACE")
-	}
-	h, err := pcap.OpenLive(iface, 1600, true, pcap.BlockForever)
+// Watch scans the given src for packets, and publish resultant Events to all
+// of it's registered Subscribers.
+func (w *Watcher) Watch(ctx context.Context, src *gopacket.PacketSource) error {
+	hosts := make(map[MAC]*Host)
+	go w.ScanPackets(hosts, src.Packets())
+	return w.Publish()
+}
+
+// blocks forever
+func (w *Watcher) WatchLive(ctx context.Context, iface string) error {
+	h, err := pcap.OpenLive(iface, 65536, true, pcap.BlockForever)
 	if err != nil {
 		return err
 	}
 	src := gopacket.NewPacketSource(h, h.LinkType())
-	hosts := make(map[MAC]*Host)
-	go w.ScanPackets(hosts, src.Packets())
-	return w.Publish()
+	return w.Watch(ctx, src)
+
+}
+
+func (w *Watcher) WatchPCAP(ctx context.Context, pcapPath string) error {
+	h, err := pcap.OpenOffline(pcapPath)
+	if err != nil {
+		return err
+	}
+	src := gopacket.NewPacketSource(h, h.LinkType())
+	return w.Watch(ctx, src)
 }
 
 // Publish endlessly reads incomming events, and sends a shallow copy of that
