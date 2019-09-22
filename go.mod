@@ -10,8 +10,8 @@ require (
 	github.com/sirupsen/logrus v1.4.2
 	github.com/spf13/cobra v0.0.5
 	github.com/stretchr/testify v1.4.0 // indirect
-	golang.org/x/lint v0.0.0-20190409202823-959b441ac422 // indirect
+	golang.org/x/lint v0.0.0-20190909230951-414d861bb4ac // indirect
 	golang.org/x/net v0.0.0-20190813141303-74dc4d7220e7 // indirect
 	golang.org/x/sys v0.0.0-20190813064441-fde4db37ae7a // indirect
-	honnef.co/go/tools v0.0.1-2019.2.2 // indirect
+	honnef.co/go/tools v0.0.1-2019.2.3 // indirect
 )

@@ -196,26 +196,6 @@ func (p Port) String() string {
 // maps.
 type MAC string
 
-// Hmm, it seems that there exist layers which don't satify the decoding
-// interface as necessary in gopacket.NewDecodingLayerParser below.
-type availLayers struct {
-	eth     layers.Ethernet
-	tcp     layers.TCP
-	lcm     layers.LCM
-	ip4     layers.IPv4
-	ip6     layers.IPv6
-	udp     layers.UDP
-	dns     layers.DNS
-	arp     layers.ARP
-	pf      layers.PFLog
-	lo      layers.Loopback
-	dot     layers.Dot11InformationElement
-	llc     layers.LLC
-	tls     layers.TLS
-	dhcp4   layers.DHCPv4
-	payload gopacket.Payload
-}
-
 // View represents a subset of information depicted about a Host, from a single
 // packet. This can be used to be associate with a host, and update it's
 // information. A View's properties are intended to be updated as different
@@ -274,7 +254,7 @@ func (w *Watcher) ScanPackets(
 		&avail.dhcp4,
 		&avail.payload,
 	)
-	decodedLayers := make([]gopacket.LayerType, 0, 32)
+	decodedLayers := make([]gopacket.LayerType, 0, 256)
 	for p := range packets {
 		if err := parser.DecodeLayers(
 			p.Data(),
@@ -283,30 +263,8 @@ func (w *Watcher) ScanPackets(
 			w.log.WithError(err).Debug("failed to decode packet")
 			continue
 		}
-		v := ViewPair{Src: NewView(), Dst: NewView()}
-		for _, ty := range decodedLayers {
-			switch ty {
-			case layers.LayerTypeEthernet:
-				handleEthernet(&v, avail.eth)
-			case layers.LayerTypeTCP:
-				handleTCP(&v, avail.tcp)
-			case layers.LayerTypeLCM:
-				handleLCM(&v, avail.lcm)
-			case layers.LayerTypeIPv4:
-				handleIPv4(&v, avail.ip4)
-			case layers.LayerTypeIPv6:
-				handleIPv6(&v, avail.ip6)
-			case layers.LayerTypeUDP:
-				handleUDP(&v, avail.udp)
-			case layers.LayerTypeDNS:
-				handleDNS(&v, avail.dns)
-			case layers.LayerTypeARP:
-				handleARP(&v, avail.arp)
-			default:
-				w.log.Debugf("unhandled layer type: %v", ty)
-			}
-		}
-		w.updateHosts(v, hosts)
+		vp := handleDecoded(w.log, avail, decodedLayers)
+		w.updateHosts(vp, hosts)
 	}
 }
 
@@ -470,49 +428,6 @@ func findHost(v View, hosts map[MAC]*Host) *Host {
 		return nil
 	}
 	return hosts[*v.MAC]
-}
-
-func handleEthernet(v *ViewPair, eth layers.Ethernet) {
-	mac := MAC(eth.SrcMAC.String())
-	v.Src.MAC = &mac
-}
-
-func handleTCP(v *ViewPair, tcp layers.TCP) {
-	v.Src.TCP[int(tcp.SrcPort)] = true
-	v.Dst.TCP[int(tcp.DstPort)] = true
-}
-
-func handleLCM(v *ViewPair, lcm layers.LCM) {
-}
-
-func handleIPv4(v *ViewPair, ip4 layers.IPv4) {
-	v.Src.IPv4 = ip4.SrcIP
-	v.Dst.IPv4 = ip4.DstIP
-}
-
-func handleIPv6(v *ViewPair, ip6 layers.IPv6) {
-	v.Src.IPv6 = ip6.SrcIP
-	v.Dst.IPv6 = ip6.DstIP
-}
-
-func handleUDP(v *ViewPair, udp layers.UDP) {
-	v.Src.UDP[int(udp.SrcPort)] = true
-	v.Dst.UDP[int(udp.DstPort)] = true
-}
-
-func handleDNS(v *ViewPair, dns layers.DNS) {
-	// spew.Dump(dns)
-}
-
-func handleARP(v *ViewPair, arp layers.ARP) {
-	// TODO: Check for change.
-	srcMAC := MAC(net.HardwareAddr(arp.SourceHwAddress).String())
-	dstMAC := MAC(net.HardwareAddr(arp.DstHwAddress).String())
-	v.Src.MAC = &srcMAC
-	v.Dst.MAC = &dstMAC
-
-	addIP(&v.Src, net.IP(arp.SourceProtAddress))
-	addIP(&v.Dst, net.IP(arp.DstProtAddress))
 }
 
 func addIP(v *View, ip net.IP) {
