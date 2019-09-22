@@ -88,6 +88,15 @@ func (w *Watcher) Publish() error {
 	return nil
 }
 
+// NewSubNull does nothing for each event. This is useful for debugging
+// handling of events, where you don't necessarily want to do anything in
+// response to the events.
+func NewSubNull(log *logrus.Logger) Subscriber {
+	return func(e Event) error {
+		return nil
+	}
+}
+
 // NewSubLogger returns a new logging Subscriber. For each event, some
 // hopefully useful information is logged.
 func NewSubLogger(log *logrus.Logger) Subscriber {
@@ -233,6 +242,8 @@ func newTriggerFromConfig(
 func newSubFromBuiltin(log *logrus.Logger, builtin string) Subscriber {
 	var sub Subscriber
 	switch strings.ToLower(builtin) {
+	case "null":
+		sub = NewSubNull(log)
 	case "log":
 		sub = NewSubLogger(log)
 	default:

@@ -12,8 +12,9 @@ import (
 // A body of information peritent to the event type is attached to each event.
 // For example, the relevant introcution of a new host's MAC address.
 type Event struct {
-	Type EventType
-	Body interface{}
+	Type      EventType
+	Timestamp time.Time
+	Body      interface{}
 }
 
 // EventType describes the type of Event that has occurred.

@@ -1,4 +1,8 @@
 [triggers]
+  [triggers.null]
+    disabled = true
+    onAny = true
+    doBuiltin = "null"
   [triggers.debug]
     disabled = true
     onAny = true
