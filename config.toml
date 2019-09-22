@@ -1,5 +1,6 @@
 [triggers]
   [triggers.debug]
+    disabled = true
     onAny = true
     doShell = "echo '{{.Description}}'"
   [triggers.log]
