@@ -8,92 +8,71 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// Hmm, it seems that there exist layers which don't satify the decoding
-// interface as necessary in gopacket.NewDecodingLayerParser below.
-type availLayers struct {
-	arp     layers.ARP
-	eth     layers.Ethernet
-	tcp     layers.TCP
-	lcm     layers.LCM
-	ip4     layers.IPv4
-	ip6     layers.IPv6
-	udp     layers.UDP
-	dns     layers.DNS
-	pf      layers.PFLog
-	lo      layers.Loopback
-	dot     layers.Dot11InformationElement
-	llc     layers.LLC
-	tls     layers.TLS
-	dhcp4   layers.DHCPv4
-	payload gopacket.Payload
-}
-
 // TODO: Support returning more than just a view pair. Perhaps more generally a
 // collection of views, and a set of relationships between them.
-func handleDecoded(
+func handlePacket(
 	log *logrus.Logger,
-	avail availLayers,
-	decodedLayers []gopacket.LayerType,
+	packet gopacket.Packet,
 ) ViewPair {
 	vp := ViewPair{Src: NewView(), Dst: NewView()}
-	for _, ty := range decodedLayers {
-		switch ty {
+	for _, l := range packet.Layers() {
+		switch l.LayerType() {
 		case layers.LayerTypeARP:
-			handleARP(&vp, avail.arp)
+			handleARP(&vp, l.(*layers.ARP))
 		case layers.LayerTypeEthernet:
-			handleEthernet(&vp, avail.eth)
+			handleEthernet(&vp, l.(*layers.Ethernet))
 		case layers.LayerTypeTCP:
-			handleTCP(&vp, avail.tcp)
+			handleTCP(&vp, l.(*layers.TCP))
 		case layers.LayerTypeLCM:
-			handleLCM(&vp, avail.lcm)
+			handleLCM(&vp, l.(*layers.LCM))
 		case layers.LayerTypeIPv4:
-			handleIPv4(&vp, avail.ip4)
+			handleIPv4(&vp, l.(*layers.IPv4))
 		case layers.LayerTypeIPv6:
-			handleIPv6(&vp, avail.ip6)
+			handleIPv6(&vp, l.(*layers.IPv6))
 		case layers.LayerTypeUDP:
-			handleUDP(&vp, avail.udp)
+			handleUDP(&vp, l.(*layers.UDP))
 		case layers.LayerTypeDNS:
-			handleDNS(&vp, avail.dns)
+			handleDNS(&vp, l.(*layers.DNS))
 		default:
-			log.Debugf("unhandled layer type: %v", ty)
+			log.Debugf("unhandled layer type: %v", l.LayerType())
 		}
 	}
 	return vp
 }
 
-func handleEthernet(v *ViewPair, eth layers.Ethernet) {
+func handleEthernet(v *ViewPair, eth *layers.Ethernet) {
 	mac := MAC(eth.SrcMAC.String())
 	v.Src.MAC = &mac
 }
 
-func handleTCP(v *ViewPair, tcp layers.TCP) {
+func handleTCP(v *ViewPair, tcp *layers.TCP) {
 	v.Src.TCP[int(tcp.SrcPort)] = true
 	v.Dst.TCP[int(tcp.DstPort)] = true
 }
 
-func handleLCM(v *ViewPair, lcm layers.LCM) {
+func handleLCM(v *ViewPair, lcm *layers.LCM) {
 }
 
-func handleIPv4(v *ViewPair, ip4 layers.IPv4) {
+func handleIPv4(v *ViewPair, ip4 *layers.IPv4) {
 	v.Src.IPv4 = ip4.SrcIP
 	v.Dst.IPv4 = ip4.DstIP
 }
 
-func handleIPv6(v *ViewPair, ip6 layers.IPv6) {
+func handleIPv6(v *ViewPair, ip6 *layers.IPv6) {
 	v.Src.IPv6 = ip6.SrcIP
 	v.Dst.IPv6 = ip6.DstIP
 }
 
-func handleUDP(v *ViewPair, udp layers.UDP) {
+func handleUDP(v *ViewPair, udp *layers.UDP) {
 	v.Src.UDP[int(udp.SrcPort)] = true
 	v.Dst.UDP[int(udp.DstPort)] = true
 }
 
-func handleDNS(v *ViewPair, dns layers.DNS) {
+func handleDNS(v *ViewPair, dns *layers.DNS) {
 	// spew.Dump(dns)
 }
 
-func handleARP(v *ViewPair, arp layers.ARP) {
+func handleARP(v *ViewPair, arp *layers.ARP) {
 	// TODO: Check for change.
 	srcMAC := MAC(net.HardwareAddr(arp.SourceHwAddress).String())
 	dstMAC := MAC(net.HardwareAddr(arp.DstHwAddress).String())

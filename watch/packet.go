@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/google/gopacket"
-	"github.com/google/gopacket/layers"
 	"github.com/henrywallace/homelab/go/netwatch/util"
 )
 
@@ -234,36 +233,8 @@ func (w *Watcher) ScanPackets(
 	packets <-chan gopacket.Packet,
 ) {
 	defer close(w.events)
-
-	var avail availLayers
-	parser := gopacket.NewDecodingLayerParser(
-		layers.LayerTypeEthernet,
-		&avail.eth,
-		&avail.tcp,
-		&avail.lcm,
-		&avail.ip4,
-		&avail.ip6,
-		&avail.udp,
-		&avail.dns,
-		&avail.arp,
-		&avail.pf,
-		&avail.lo,
-		&avail.dot,
-		&avail.llc,
-		&avail.tls,
-		&avail.dhcp4,
-		&avail.payload,
-	)
-	decodedLayers := make([]gopacket.LayerType, 0, 256)
 	for p := range packets {
-		if err := parser.DecodeLayers(
-			p.Data(),
-			&decodedLayers,
-		); err != nil {
-			w.log.WithError(err).Debug("failed to decode packet")
-			continue
-		}
-		vp := handleDecoded(w.log, avail, decodedLayers)
+		vp := handlePacket(w.log, p)
 		w.updateHosts(vp, hosts)
 	}
 }
