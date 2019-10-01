@@ -6,7 +6,10 @@ events based on changes to those hosts, e.g. a new host with new MAC address
 has entered the local network, a known host is using never before used port
 22/tcp, or a host is performing an ARP scan.
 
-Example:
+Dual-licensed under MIT or the UNLICENSE.
+
+## Examples
+
 ```
 % sudo -E go run main.go --only log
 INFO[2019-09-24 20:28:38] using first up interface: eth0
