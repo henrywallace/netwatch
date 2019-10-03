@@ -30,11 +30,6 @@ type Watcher struct {
 	subs   []Subscriber
 }
 
-// Subscriber handles a single event and reacts to it. A Subscriber can be
-// wrapped within a Trigger if they wish to filter which Events are recieved by
-// the Subscriber.
-type Subscriber func(e Event) error
-
 // NewWatcher creates a new watcher initialized with the given subscribers.
 func NewWatcher(log *logrus.Logger, subs ...Subscriber) *Watcher {
 	if len(subs) == 0 {
@@ -88,51 +83,6 @@ func (w *Watcher) Publish() error {
 	return nil
 }
 
-// NewSubNull does nothing for each event. This is useful for debugging
-// handling of events, where you don't necessarily want to do anything in
-// response to the events.
-func NewSubNull(log *logrus.Logger) Subscriber {
-	return func(e Event) error {
-		return nil
-	}
-}
-
-// NewSubLogger returns a new logging Subscriber. For each event, some
-// hopefully useful information is logged.
-func NewSubLogger(log *logrus.Logger) Subscriber {
-	return func(e Event) error {
-		switch e.Type {
-		case HostTouch:
-			e := e.Body.(EventHostTouch)
-			log.Infof("touch %s", e.Host)
-		case HostNew:
-			e := e.Body.(EventHostNew)
-			log.Infof("new %s", e.Host)
-		case HostLost:
-			e := e.Body.(EventHostLost)
-			log.Infof("drop %s (up %s)", e.Host, e.Up)
-		case HostFound:
-			e := e.Body.(EventHostFound)
-			log.Infof("return %s (down %s)", e.Host, e.Down)
-		case PortTouch:
-			e := e.Body.(EventPortTouch)
-			log.Infof("touch %s on %s", e.Port, e.Host)
-		case PortNew:
-			e := e.Body.(EventPortNew)
-			log.Infof("new %s on %s", e.Port, e.Host)
-		case PortLost:
-			e := e.Body.(EventPortLost)
-			log.Infof("drop %s (up %s) on %s", e.Port, e.Up, e.Host)
-		case PortFound:
-			e := e.Body.(EventPortFound)
-			log.Infof("return %s (down %s) on %s", e.Port, e.Down, e.Host)
-		default:
-			panic(fmt.Sprintf("unhandled event type: %#v", e))
-		}
-		return nil
-	}
-}
-
 // NewSubConfig returns a new Subscriber
 func NewSubConfig(
 	log *logrus.Logger,
@@ -145,7 +95,7 @@ func NewSubConfig(
 	}
 	// TODO: validate config, e.g. not on event and on events, etc.
 
-	triggers := make(map[string]Trigger)
+	triggers := make(map[string]FilteredSubscriber)
 	onlySet := stringSet(only)
 	for name, spec := range conf.Triggers {
 		if len(onlySet) > 0 && !onlySet[name] {
@@ -175,25 +125,11 @@ func NewSubConfig(
 	}, nil
 }
 
-func stringSet(slice []string) map[string]bool {
-	m := make(map[string]bool)
-	for _, s := range slice {
-		m[s] = true
-	}
-	return m
-}
-
-// Trigger combines a Subscriber with an event "filter" closure.
-type Trigger struct {
-	Sub      Subscriber
-	ShouldDo func(e Event) bool
-}
-
 func newTriggerFromConfig(
 	log *logrus.Logger,
 	name string,
 	spec TriggerSpec,
-) Trigger {
+) FilteredSubscriber {
 	var sub Subscriber
 	if spec.DoBuiltin != "" {
 		sub = newSubFromBuiltin(log, spec.DoBuiltin)
@@ -212,7 +148,7 @@ func newTriggerFromConfig(
 	if spec.OnShell != "" {
 		shouldDo = newShouldDoFromShell(context.TODO(), log, spec.OnShell)
 	}
-	return Trigger{
+	return FilteredSubscriber{
 		Sub: sub,
 		ShouldDo: func(e Event) bool {
 			if spec.OnAny {
@@ -418,4 +354,12 @@ func newEventInfo(e Event) printableEvent {
 		panic(fmt.Sprintf("unhandled event type: %#v", e))
 	}
 	return pe
+}
+
+func stringSet(slice []string) map[string]bool {
+	m := make(map[string]bool)
+	for _, s := range slice {
+		m[s] = true
+	}
+	return m
 }
