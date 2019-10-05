@@ -18,8 +18,10 @@ import (
 )
 
 var (
-	ttlHost = 120 * time.Second
-	ttlPort = 30 * time.Second
+	ttlHost     = 120 * time.Second
+	ttlPort     = 30 * time.Second
+	ttlArpScan  = 5 * time.Second
+	arpScanFreq = 20.0
 )
 
 // Watcher watches network activity and sends resultant Events to all of it's
@@ -50,7 +52,7 @@ func (w *Watcher) Watch(ctx context.Context, src *gopacket.PacketSource) error {
 	return w.Publish()
 }
 
-// blocks forever
+// WatchLive watches from the first good interface, and blocks forever.
 func (w *Watcher) WatchLive(ctx context.Context, iface string) error {
 	h, err := pcap.OpenLive(iface, 65536, true, pcap.BlockForever)
 	if err != nil {
@@ -61,6 +63,7 @@ func (w *Watcher) WatchLive(ctx context.Context, iface string) error {
 
 }
 
+// WatchPCAP watches from a predefined pcap file.
 func (w *Watcher) WatchPCAP(ctx context.Context, pcapPath string) error {
 	h, err := pcap.OpenOffline(pcapPath)
 	if err != nil {
@@ -301,6 +304,20 @@ func newEventInfo(e Event) printableEvent {
 			e.Host.IPv4,
 			e.Down,
 			e.Host.Age(),
+		)
+	case HostARPScanStart:
+		e := e.Body.(EventHostARPScanStart)
+		pe.Host = *e.Host
+		pe.Description = fmt.Sprintf(
+			"%s started arp scan started",
+			e.Host,
+		)
+	case HostARPScanStop:
+		e := e.Body.(EventHostARPScanStop)
+		pe.Host = *e.Host
+		pe.Description = fmt.Sprintf(
+			"%s stopped arp scan",
+			e.Host,
 		)
 	case PortTouch:
 		e := e.Body.(EventPortTouch)

@@ -3,11 +3,51 @@ package watch
 import (
 	"fmt"
 	"net"
+	"sort"
+	"sync"
 	"time"
 
 	"github.com/google/gopacket"
+	"github.com/google/gopacket/layers"
 	"github.com/henrywallace/homelab/go/netwatch/util"
 )
+
+// Activity holds episodic state for something.
+type Activity struct {
+	Active           bool
+	FirstSeen        time.Time
+	FirstSeenEpisode time.Time
+	LastSeen         time.Time
+
+	expire *time.Timer
+	ttl    time.Duration
+}
+
+// NewActivity creates a new Activity with the given time-to-live, and callback
+// once it hasn't been touched after the given ttl.
+func NewActivity(ttl time.Duration, expire func(a *Activity)) *Activity {
+	a := &Activity{ttl: ttl}
+	a.expire = time.AfterFunc(ttl, func() {
+		a.Active = false
+		expire(a)
+	})
+	return a
+}
+
+// Touch resets the time to live for this Activity, and returns if already was
+// active.
+func (a *Activity) Touch(now time.Time) bool {
+	var wasActive bool
+	if a.Active {
+		wasActive = true
+	} else {
+		a.FirstSeenEpisode = now
+	}
+	a.Active = true
+	a.LastSeen = now
+	a.expire.Reset(a.ttl)
+	return wasActive
+}
 
 // Host is a tracked entity.
 type Host struct {
@@ -16,14 +56,15 @@ type Host struct {
 	FirstSeenEpisode time.Time
 	LastSeen         time.Time
 
-	MAC  MAC
-	IPv4 net.IP
-	IPv6 net.IP
+	MAC             MAC
+	IPv4            net.IP
+	IPv6            net.IP
+	TCP             map[int]*Port
+	UDP             map[int]*Port
+	ActivityARPScan *Activity
 
 	expire *time.Timer
-
-	TCP map[int]*Port
-	UDP map[int]*Port
+	arps   *windowed
 }
 
 func (h Host) String() string {
@@ -41,9 +82,11 @@ func (h Host) Age() time.Duration {
 }
 
 // NewHost returns a new Host whose first and last seen timestamps are set
-// to now.
+// to now. The given expire function is called whenever the Host hasn't been
+// touched after some default amount of time, indicating that it is non-active.
 func NewHost(
 	mac MAC,
+	events chan<- Event,
 	expire func(h *Host),
 ) *Host {
 	now := time.Now()
@@ -54,7 +97,17 @@ func NewHost(
 		LastSeen:         now,
 		TCP:              make(map[int]*Port),
 		UDP:              make(map[int]*Port),
+		arps:             newWindowed(10 * time.Second),
 	}
+	h.ActivityARPScan = NewActivity(ttlArpScan, func(a *Activity) {
+		events <- Event{
+			Type: HostARPScanStop,
+			Body: EventHostARPScanStop{
+				Host: &h,
+				Up:   time.Since(a.FirstSeenEpisode),
+			},
+		}
+	})
 	h.expire = time.AfterFunc(ttlHost, func() {
 		h.Active = false
 		expire(&h)
@@ -220,8 +273,9 @@ func NewView() View {
 // ViewPair represents a pair of views that are communicating withing one
 // packet, all determined from a single packet.
 type ViewPair struct {
-	Src View
-	Dst View
+	Src    View
+	Dst    View
+	Layers map[gopacket.LayerType]int
 }
 
 // ScanPackets updates hosts with a given a stream of packets, and sends
@@ -247,10 +301,10 @@ func (w *Watcher) ScanPackets(
 var InvalidHost = Host{}
 
 func (w *Watcher) updateHosts(
-	v ViewPair,
+	vp ViewPair,
 	hosts map[MAC]*Host,
 ) {
-	w.updateHostWithView(hosts, v.Src)
+	w.updateHostWithView(hosts, vp, vp.Src)
 	// TODO: There are some bugs here with the double updating, with
 	// duplicate new hosts being detected.
 	//
@@ -259,8 +313,11 @@ func (w *Watcher) updateHosts(
 
 func (w *Watcher) updateHostWithView(
 	hosts map[MAC]*Host,
+	vp ViewPair,
 	v View,
 ) {
+	now := time.Now()
+
 	// TODO: Relieve this handicap, which is an artifact of the hosts
 	// map[MAC]*Host datastructure, which should be made more
 	// flexible.
@@ -271,7 +328,7 @@ func (w *Watcher) updateHostWithView(
 	prev := findHost(v, hosts)
 	var curr *Host
 	if prev == nil {
-		curr = NewHost(*v.MAC, func(h *Host) {
+		curr = NewHost(*v.MAC, w.events, func(h *Host) {
 			up := time.Since(h.FirstSeenEpisode)
 			w.events <- Event{
 				Type: HostLost,
@@ -292,11 +349,27 @@ func (w *Watcher) updateHostWithView(
 			}
 		}
 		curr = prev
+		// TODO: Add timestamp arg to Touch method.
 		curr.Touch()
 		w.log.Debugf("touch host %s", curr)
 		w.events <- Event{
 			Type: HostTouch,
 			Body: EventHostTouch{curr},
+		}
+	}
+
+	// Update ARP scan.
+	if vp.Layers[layers.LayerTypeARP] > 0 {
+		// TODO: Use a View timestamp.
+		curr.arps.Add(now)
+	}
+	freq := curr.arps.Freq()
+	if freq >= arpScanFreq {
+		if !curr.ActivityARPScan.Touch(now) {
+			w.events <- Event{
+				Type: HostARPScanStart,
+				Body: EventHostARPScanStart{curr},
+			}
 		}
 	}
 
@@ -386,7 +459,6 @@ func (w *Watcher) updatePortsWithView(h *Host, v View) {
 				Body: EventPortTouch{curr, h},
 			}
 		}
-
 	}
 }
 
@@ -409,4 +481,44 @@ func addIP(v *View, ip net.IP) {
 	} else {
 		util.NewLogger().Warnf("invalid ip len=%d: %#v", len(ip), ip)
 	}
+}
+
+type windowed struct {
+	size    time.Duration
+	mu      sync.Mutex
+	entries []time.Time
+}
+
+func newWindowed(size time.Duration) *windowed {
+	return &windowed{size: size}
+}
+
+// Add adds an entry with the given timestamp.
+func (w *windowed) Add(ts time.Time) {
+	w.mu.Lock()
+	w.entries = append(w.entries, ts)
+	if len(w.entries)%50 == 0 {
+		w.flush()
+	}
+	w.mu.Unlock()
+}
+
+func (w *windowed) flush() {
+	now := time.Now()
+	cut := now.Add(-w.size)
+	i := sort.Search(len(w.entries), func(i int) bool {
+		return w.entries[i].After(cut)
+	})
+	w.entries = w.entries[i:]
+}
+
+// Count returns the nubmer of entries in the window size.
+func (w *windowed) Count() int {
+	w.flush()
+	return len(w.entries)
+}
+
+// Freq returns the current Count per second.
+func (w *windowed) Freq() float64 {
+	return float64(w.Count()) / w.size.Seconds()
 }

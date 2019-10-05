@@ -27,6 +27,8 @@ const (
 	HostNew
 	HostLost
 	HostFound
+	HostARPScanStart
+	HostARPScanStop
 	PortTouch
 	PortNew
 	PortLost
@@ -47,6 +49,10 @@ func (ty EventType) MarshalText() ([]byte, error) {
 		s = "host.lost"
 	case HostFound:
 		s = "host.found"
+	case HostARPScanStart:
+		s = "host.arp-scan.start"
+	case HostARPScanStop:
+		s = "host.arp-scan.stop"
 	case PortTouch:
 		s = "port.touch"
 	case PortNew:
@@ -75,6 +81,10 @@ func (ty *EventType) UnmarshalText(text []byte) error {
 		*ty = HostLost
 	case "host.found":
 		*ty = HostFound
+	case "host.arp-scan.start":
+		*ty = HostARPScanStart
+	case "host.arp-scan.stop":
+		*ty = HostARPScanStop
 	case "port.touch":
 		*ty = PortTouch
 	case "port.new":
@@ -122,6 +132,20 @@ type EventHostLost struct {
 type EventHostFound struct {
 	Host *Host
 	Down time.Duration
+}
+
+// EventHostARPScanStart indicates that a host has started an arp scan. That is
+// there are many ARP protocol packets originating from this host in a short
+// amount of time.
+type EventHostARPScanStart struct {
+	Host *Host
+}
+
+// EventHostARPScanStop indicates that a host has stopped performing an ARP
+// scan when it previously was.
+type EventHostARPScanStop struct {
+	Host *Host
+	Up   time.Duration
 }
 
 //

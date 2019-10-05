@@ -44,6 +44,12 @@ func NewSubLogger(log *logrus.Logger) Subscriber {
 		case HostFound:
 			e := e.Body.(EventHostFound)
 			log.Infof("return %s (down %s)", e.Host, e.Down)
+		case HostARPScanStart:
+			e := e.Body.(EventHostARPScanStart)
+			log.Infof("host started arp scan %s", e.Host)
+		case HostARPScanStop:
+			e := e.Body.(EventHostARPScanStop)
+			log.Infof("host stopped arp scan %s (up %s)", e.Host, e.Up)
 		case PortTouch:
 			e := e.Body.(EventPortTouch)
 			log.Infof("touch %s on %s", e.Port, e.Host)

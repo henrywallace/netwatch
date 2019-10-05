@@ -14,8 +14,13 @@ func handlePacket(
 	log *logrus.Logger,
 	packet gopacket.Packet,
 ) ViewPair {
-	vp := ViewPair{Src: NewView(), Dst: NewView()}
+	vp := ViewPair{
+		Src:    NewView(),
+		Dst:    NewView(),
+		Layers: make(map[gopacket.LayerType]int),
+	}
 	for _, l := range packet.Layers() {
+		vp.Layers[l.LayerType()]++
 		switch l.LayerType() {
 		case layers.LayerTypeARP:
 			handleARP(&vp, l.(*layers.ARP))
@@ -69,7 +74,6 @@ func handleUDP(v *ViewPair, udp *layers.UDP) {
 }
 
 func handleDNS(v *ViewPair, dns *layers.DNS) {
-	// spew.Dump(dns)
 }
 
 func handleARP(v *ViewPair, arp *layers.ARP) {
