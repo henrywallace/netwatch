@@ -17,13 +17,6 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-var (
-	ttlHost     = 120 * time.Second
-	ttlPort     = 30 * time.Second
-	ttlArpScan  = 5 * time.Second
-	arpScanFreq = 20.0
-)
-
 // Watcher watches network activity and sends resultant Events to all of it's
 // Subscribers.
 type Watcher struct {
@@ -271,13 +264,13 @@ func newEventInfo(e Event) printableEvent {
 			"touched host %s at %s (up %s) (age %s)",
 			e.Host.MAC,
 			e.Host.IPv4,
-			time.Since(e.Host.FirstSeenEpisode),
-			e.Host.Age(),
+			time.Since(e.Host.Activity.FirstSeenEpisode),
+			e.Host.Activity.Age(),
 		)
 	case HostNew:
 		e := e.Body.(EventHostNew)
 		pe.Host = *e.Host
-		pe.Age = e.Host.Age()
+		pe.Age = e.Host.Activity.Age()
 		pe.Description = fmt.Sprintf(
 			"new host %s at %s",
 			e.Host.MAC,
@@ -292,7 +285,7 @@ func newEventInfo(e Event) printableEvent {
 			e.Host.MAC,
 			e.Host.IPv4,
 			e.Up,
-			e.Host.Age(),
+			e.Host.Activity.Age(),
 		)
 	case HostFound:
 		e := e.Body.(EventHostFound)
@@ -303,7 +296,7 @@ func newEventInfo(e Event) printableEvent {
 			e.Host.MAC,
 			e.Host.IPv4,
 			e.Down,
-			e.Host.Age(),
+			e.Host.Activity.Age(),
 		)
 	case HostARPScanStart:
 		e := e.Body.(EventHostARPScanStart)
@@ -328,7 +321,7 @@ func newEventInfo(e Event) printableEvent {
 			"touched port %s at %s (up %s)",
 			pe.Port,
 			pe.Host.IPv4,
-			time.Since(pe.Host.FirstSeenEpisode),
+			pe.Host.Activity.Age(),
 		)
 	case PortNew:
 		e := e.Body.(EventPortNew)
@@ -339,7 +332,7 @@ func newEventInfo(e Event) printableEvent {
 			"new port %s at %s (age %s)",
 			e.Port,
 			e.Host.IPv4,
-			e.Port.Age(),
+			e.Port.Activity.Age(),
 		)
 	case PortLost:
 		e := e.Body.(EventPortLost)
@@ -352,7 +345,7 @@ func newEventInfo(e Event) printableEvent {
 			e.Port,
 			e.Host.IPv4,
 			e.Up,
-			e.Port.Age(),
+			e.Port.Activity.Age(),
 		)
 	case PortFound:
 		e := e.Body.(EventPortFound)
@@ -365,7 +358,7 @@ func newEventInfo(e Event) printableEvent {
 			e.Port,
 			e.Host.IPv4,
 			e.Down,
-			e.Port.Age(),
+			e.Port.Activity.Age(),
 		)
 	default:
 		panic(fmt.Sprintf("unhandled event type: %#v", e))

@@ -12,59 +12,84 @@ import (
 	"github.com/henrywallace/homelab/go/netwatch/util"
 )
 
+var (
+	ttlHost     = 120 * time.Second
+	ttlPort     = 30 * time.Second
+	ttlArpScan  = 5 * time.Second
+	arpScanFreq = 20.0
+	arpWindow   = 10 * time.Second
+)
+
 // Activity holds episodic state for something.
 type Activity struct {
-	Active           bool
+	IsActive         bool
 	FirstSeen        time.Time
 	FirstSeenEpisode time.Time
 	LastSeen         time.Time
 
-	expire *time.Timer
-	ttl    time.Duration
+	expireFunc func(a *Activity)
+	expire     *time.Timer
+	ttl        time.Duration
 }
 
 // NewActivity creates a new Activity with the given time-to-live, and callback
 // once it hasn't been touched after the given ttl.
-func NewActivity(ttl time.Duration, expire func(a *Activity)) *Activity {
-	a := &Activity{ttl: ttl}
-	a.expire = time.AfterFunc(ttl, func() {
-		a.Active = false
-		expire(a)
-	})
+func NewActivity(ttl time.Duration, expireFunc func(a *Activity)) *Activity {
+	a := &Activity{
+		ttl:        ttl,
+		expireFunc: expireFunc,
+	}
 	return a
 }
 
 // Touch resets the time to live for this Activity, and returns if already was
 // active.
 func (a *Activity) Touch(now time.Time) bool {
+	if a.expire == nil {
+		a.expire = time.AfterFunc(a.ttl, func() {
+			a.IsActive = false
+			a.expireFunc(a)
+		})
+	} else {
+		a.expire.Reset(a.ttl)
+	}
+	if a.FirstSeen.IsZero() {
+		a.FirstSeen = now
+	}
 	var wasActive bool
-	if a.Active {
+	if a.IsActive {
 		wasActive = true
 	} else {
 		a.FirstSeenEpisode = now
 	}
-	a.Active = true
+	a.IsActive = true
 	a.LastSeen = now
-	a.expire.Reset(a.ttl)
 	return wasActive
+}
+
+// Age returns the time since this was first seen, regardless if it is
+// currently active or not.
+func (a Activity) Age() time.Duration {
+	return time.Since(a.FirstSeen)
+}
+
+// Up returns the time since this was recently first seen.
+func (a Activity) Up() time.Duration {
+	return time.Since(a.FirstSeenEpisode)
 }
 
 // Host is a tracked entity.
 type Host struct {
-	Active           bool
-	FirstSeen        time.Time
-	FirstSeenEpisode time.Time
-	LastSeen         time.Time
-
-	MAC             MAC
-	IPv4            net.IP
-	IPv6            net.IP
-	TCP             map[int]*Port
-	UDP             map[int]*Port
+	Activity        *Activity
 	ActivityARPScan *Activity
 
-	expire *time.Timer
-	arps   *windowed
+	MAC  MAC
+	IPv4 net.IP
+	IPv6 net.IP
+	TCP  map[int]*Port
+	UDP  map[int]*Port
+
+	arps *windowed
 }
 
 func (h Host) String() string {
@@ -76,29 +101,25 @@ func (h Host) String() string {
 	)
 }
 
-// Age returns how long it's been the host was first seen.
-func (h Host) Age() time.Duration {
-	return time.Since(h.FirstSeen)
-}
-
-// NewHost returns a new Host whose first and last seen timestamps are set
-// to now. The given expire function is called whenever the Host hasn't been
-// touched after some default amount of time, indicating that it is non-active.
+// NewHost returns a new Host whose activity is touched on creation. The given
+// expire function is called whenever the Host hasn't been touched after some
+// default amount of time, indicating that it is non-active.
 func NewHost(
 	mac MAC,
 	events chan<- Event,
+	now time.Time,
 	expire func(h *Host),
 ) *Host {
-	now := time.Now()
 	h := Host{
-		MAC:              mac,
-		FirstSeen:        now,
-		FirstSeenEpisode: now,
-		LastSeen:         now,
-		TCP:              make(map[int]*Port),
-		UDP:              make(map[int]*Port),
-		arps:             newWindowed(10 * time.Second),
+		MAC:  mac,
+		TCP:  make(map[int]*Port),
+		UDP:  make(map[int]*Port),
+		arps: newWindowed(arpWindow),
 	}
+	h.Activity = NewActivity(ttlHost, func(a *Activity) {
+		expire(&h)
+	})
+	h.Activity.Touch(now)
 	h.ActivityARPScan = NewActivity(ttlArpScan, func(a *Activity) {
 		events <- Event{
 			Type: HostARPScanStop,
@@ -108,22 +129,7 @@ func NewHost(
 			},
 		}
 	})
-	h.expire = time.AfterFunc(ttlHost, func() {
-		h.Active = false
-		expire(&h)
-	})
 	return &h
-}
-
-// Touch updates the last seen time of this Host.
-func (h *Host) Touch() {
-	now := time.Now()
-	if !h.Active {
-		h.FirstSeenEpisode = now
-	}
-	h.Active = true
-	h.LastSeen = now
-	h.expire.Reset(ttlHost)
 }
 
 // ActiveTCP returns all TCP ports for the given Host that are currently
@@ -134,7 +140,7 @@ func (h *Host) Touch() {
 func (h Host) ActiveTCP() []*Port {
 	var active []*Port
 	for _, p := range h.TCP {
-		if p.Active {
+		if p.Activity.IsActive {
 			active = append(active, p)
 		}
 	}
@@ -149,7 +155,7 @@ func (h Host) ActiveTCP() []*Port {
 func (h Host) ActiveUDP() []*Port {
 	var active []*Port
 	for _, p := range h.UDP {
-		if p.Active {
+		if p.Activity.IsActive {
 			active = append(active, p)
 		}
 	}
@@ -160,54 +166,27 @@ func (h Host) ActiveUDP() []*Port {
 // a sending or receiving host. Each Port has a TTL, before being considered
 // inactive. But it can be "touched" to be kept alive.
 type Port struct {
-	// TODO: Reduce the duplicity between the "expriation fields" between
-	// this Port type and a Host. Surely that can be shared.
+	Activity *Activity
+	Num      int
 
-	Active           bool
-	FirstSeen        time.Time
-	FirstSeenEpisode time.Time
-	LastSeen         time.Time
-
-	expire *time.Timer
-
-	Num   int
 	isTCP bool
-}
-
-// Touch updates the last seen time of this Host.
-func (p *Port) Touch() {
-	now := time.Now()
-	if !p.Active {
-		p.FirstSeenEpisode = now
-	}
-	p.Active = true
-	p.LastSeen = now
-	p.expire.Reset(ttlHost)
-}
-
-// Age returns how long it's been the port was first seen.
-func (p Port) Age() time.Duration {
-	return time.Since(p.FirstSeen)
 }
 
 // NewPortTCP returns a new TCP port of the given port number. And a function
 // one what to do when the port expires, given a pointer to the created Port.
 func NewPortTCP(
 	num int,
+	now time.Time,
 	expire func(p *Port),
 ) *Port {
-	now := time.Now()
 	p := Port{
-		FirstSeen:        now,
-		FirstSeenEpisode: now,
-		LastSeen:         now,
-		Num:              num,
-		isTCP:            true,
+		Num:   num,
+		isTCP: true,
 	}
-	p.expire = time.AfterFunc(ttlPort, func() {
-		p.Active = false
+	p.Activity = NewActivity(ttlHost, func(a *Activity) {
 		expire(&p)
 	})
+	p.Activity.Touch(now)
 	return &p
 }
 
@@ -215,20 +194,17 @@ func NewPortTCP(
 // one what to do when the port expires, given a pointer to the created Port.
 func NewPortUDP(
 	num int,
+	now time.Time,
 	expire func(p *Port),
 ) *Port {
-	now := time.Now()
 	p := Port{
-		FirstSeen:        now,
-		FirstSeenEpisode: now,
-		LastSeen:         now,
-		Num:              num,
-		isTCP:            false,
+		Num:   num,
+		isTCP: false,
 	}
-	p.expire = time.AfterFunc(ttlHost, func() {
-		p.Active = false
+	p.Activity = NewActivity(ttlHost, func(a *Activity) {
 		expire(&p)
 	})
+	p.Activity.Touch(now)
 	return &p
 }
 
@@ -328,8 +304,8 @@ func (w *Watcher) updateHostWithView(
 	prev := findHost(v, hosts)
 	var curr *Host
 	if prev == nil {
-		curr = NewHost(*v.MAC, w.events, func(h *Host) {
-			up := time.Since(h.FirstSeenEpisode)
+		curr = NewHost(*v.MAC, w.events, now, func(h *Host) {
+			up := time.Since(h.Activity.FirstSeenEpisode)
 			w.events <- Event{
 				Type: HostLost,
 				Body: EventHostLost{h, up},
@@ -341,8 +317,8 @@ func (w *Watcher) updateHostWithView(
 			Body: EventHostNew{curr},
 		}
 	} else {
-		if time.Since(prev.LastSeen) > ttlHost {
-			down := time.Since(prev.LastSeen)
+		if time.Since(prev.Activity.LastSeen) > ttlHost {
+			down := time.Since(prev.Activity.LastSeen)
 			w.events <- Event{
 				Type: HostFound,
 				Body: EventHostFound{prev, down},
@@ -350,7 +326,7 @@ func (w *Watcher) updateHostWithView(
 		}
 		curr = prev
 		// TODO: Add timestamp arg to Touch method.
-		curr.Touch()
+		curr.Activity.Touch(now)
 		w.log.Debugf("touch host %s", curr)
 		w.events <- Event{
 			Type: HostTouch,
@@ -393,15 +369,16 @@ func (w *Watcher) updateHostWithView(
 
 // TODO: Only update dst ports whenever the dst host is active.
 func (w *Watcher) updatePortsWithView(h *Host, v View) {
+	now := time.Now()
+
 	for num := range v.TCP {
 		prev, ok := h.TCP[num]
 		var curr *Port
 		if !ok {
-			curr = NewPortTCP(num, func(p *Port) {
-				up := time.Since(p.FirstSeenEpisode)
+			curr = NewPortTCP(num, now, func(p *Port) {
 				w.events <- Event{
 					Type: PortLost,
-					Body: EventPortLost{p, up, h},
+					Body: EventPortLost{p, p.Activity.Up(), h},
 				}
 			})
 			h.TCP[num] = curr
@@ -410,17 +387,17 @@ func (w *Watcher) updatePortsWithView(h *Host, v View) {
 				Body: EventPortNew{curr, h},
 			}
 		} else {
-			if time.Since(prev.LastSeen) > ttlPort {
+			if time.Since(prev.Activity.LastSeen) > ttlPort {
 				// We consider the host to have been alive for
 				// ttlPort nanoseconds after it was last seen.
-				down := time.Since(prev.LastSeen) - ttlPort
+				down := time.Since(prev.Activity.LastSeen) - ttlPort
 				w.events <- Event{
 					Type: PortFound,
 					Body: EventPortFound{prev, down, h},
 				}
 			}
 			curr = prev
-			curr.Touch()
+			curr.Activity.Touch(now)
 			w.log.Debugf("touch host %s on %s", curr, h.IPv4)
 		}
 
@@ -429,11 +406,10 @@ func (w *Watcher) updatePortsWithView(h *Host, v View) {
 		prev, ok := h.UDP[num]
 		var curr *Port
 		if !ok {
-			curr = NewPortUDP(num, func(p *Port) {
-				up := time.Since(p.FirstSeenEpisode)
+			curr = NewPortUDP(num, now, func(p *Port) {
 				w.events <- Event{
 					Type: PortLost,
-					Body: EventPortLost{p, up, h},
+					Body: EventPortLost{p, p.Activity.Up(), h},
 				}
 			})
 			h.UDP[num] = curr
@@ -442,17 +418,17 @@ func (w *Watcher) updatePortsWithView(h *Host, v View) {
 				Body: EventPortNew{curr, h},
 			}
 		} else {
-			if time.Since(prev.LastSeen) > ttlPort {
+			if time.Since(prev.Activity.LastSeen) > ttlPort {
 				// We consider the host to have been alive for
 				// ttlPort nanoseconds after it was last seen.
-				down := time.Since(prev.LastSeen) - ttlPort
+				down := time.Since(prev.Activity.LastSeen) - ttlPort
 				w.events <- Event{
 					Type: PortFound,
 					Body: EventPortFound{prev, down, h},
 				}
 			}
 			curr = prev
-			curr.Touch()
+			curr.Activity.Touch(now)
 			w.log.Debugf("touch host %s on %s", curr, h.IPv4)
 			w.events <- Event{
 				Type: PortTouch,
