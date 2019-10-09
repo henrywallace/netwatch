@@ -2,6 +2,8 @@ package watch
 
 import (
 	"net"
+	"regexp"
+	"strings"
 
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
@@ -38,6 +40,10 @@ func handlePacket(
 			handleUDP(&vp, l.(*layers.UDP))
 		case layers.LayerTypeDNS:
 			handleDNS(&vp, l.(*layers.DNS))
+		case layers.LayerTypeDHCPv4:
+			handleDHCPv4(&vp, l.(*layers.DHCPv4))
+		case layers.LayerTypeDHCPv6:
+			handleDHCPv6(&vp, l.(*layers.DHCPv6))
 		default:
 			log.Debugf("unhandled layer type: %v", l.LayerType())
 		}
@@ -74,6 +80,44 @@ func handleUDP(v *ViewPair, udp *layers.UDP) {
 }
 
 func handleDNS(v *ViewPair, dns *layers.DNS) {
+}
+
+func handleDHCPv4(v *ViewPair, dhcp *layers.DHCPv4) {
+	if dhcp.Operation == layers.DHCPOpRequest {
+		for _, opt := range dhcp.Options {
+			switch opt.Type {
+			case layers.DHCPOptHostname:
+				v.Src.Hostname = string(opt.Data)
+			case layers.DHCPOptClassID:
+				// TODO
+			case layers.DHCPOptClientID:
+				// TODO
+			}
+		}
+	}
+}
+
+var reControl = regexp.MustCompile(`^\p{Cc}+`)
+
+func stripOptDHCPv6(s string) string {
+	s = reControl.ReplaceAllString(s, "")
+	s = strings.TrimSpace(s)
+	return s
+}
+
+func handleDHCPv6(v *ViewPair, dhcp *layers.DHCPv6) {
+	if dhcp.MsgType == layers.DHCPv6MsgTypeSolicit {
+		for _, opt := range dhcp.Options {
+			switch opt.Code {
+			case layers.DHCPv6OptClientFQDN:
+				v.Src.Hostname = stripOptDHCPv6(string(opt.Data))
+			case layers.DHCPv6OptClientID:
+				// TODO
+			case layers.DHCPv6OptVendorClass:
+				// TODO
+			}
+		}
+	}
 }
 
 func handleARP(v *ViewPair, arp *layers.ARP) {

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -83,22 +84,24 @@ type Host struct {
 	Activity        *Activity
 	ActivityARPScan *Activity
 
-	MAC  MAC
-	IPv4 net.IP
-	IPv6 net.IP
-	TCP  map[int]*Port
-	UDP  map[int]*Port
+	MAC      MAC
+	IPv4     net.IP
+	IPv6     net.IP
+	TCP      map[int]*Port
+	UDP      map[int]*Port
+	Hostname string
 
 	arps *windowed
 }
 
 func (h Host) String() string {
-	return fmt.Sprintf(
-		"Host(%s, %s)",
-		h.MAC,
-		h.IPv4,
-		// TODO: hostname
-	)
+	var parts []string
+	if h.Hostname != "" {
+		parts = append(parts, h.Hostname)
+	}
+	parts = append(parts, string(h.MAC), h.IPv4.String())
+	s := fmt.Sprintf("Host(%s)", strings.Join(parts, ", "))
+	return s
 }
 
 // NewHost returns a new Host whose activity is touched on creation. The given
@@ -231,11 +234,12 @@ type MAC string
 // View, but it aims to capture as much information from each packet as
 // possible before updating the hosts.
 type View struct {
-	MAC  *MAC
-	IPv4 net.IP
-	IPv6 net.IP
-	TCP  map[int]bool
-	UDP  map[int]bool
+	MAC      *MAC
+	IPv4     net.IP
+	IPv6     net.IP
+	TCP      map[int]bool
+	UDP      map[int]bool
+	Hostname string
 }
 
 // NewView returns a new
@@ -332,6 +336,13 @@ func (w *Watcher) updateHostWithView(
 			Type: HostTouch,
 			Body: EventHostTouch{curr},
 		}
+	}
+
+	if v.Hostname != "" {
+		if curr.Hostname != v.Hostname {
+			w.log.Warnf("hostname has changed %s -> %s", curr.Hostname, v.Hostname)
+		}
+		curr.Hostname = v.Hostname
 	}
 
 	// Update ARP scan.
