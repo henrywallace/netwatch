@@ -10,7 +10,7 @@ import (
 
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
-	"github.com/henrywallace/homelab/go/netwatch/util"
+	"github.com/henrywallace/netwatch/util"
 )
 
 var (

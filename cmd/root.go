@@ -11,8 +11,8 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
-	"github.com/henrywallace/homelab/go/netwatch/util"
-	"github.com/henrywallace/homelab/go/netwatch/watch"
+	"github.com/henrywallace/netwatch/util"
+	"github.com/henrywallace/netwatch/watch"
 )
 
 var rootCmd = &cobra.Command{

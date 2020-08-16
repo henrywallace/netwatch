@@ -1,6 +1,6 @@
 package main
 
-import "github.com/henrywallace/homelab/go/netwatch/cmd"
+import "github.com/henrywallace/netwatch/cmd"
 
 func main() {
 	cmd.Execute()
